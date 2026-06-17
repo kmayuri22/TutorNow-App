@@ -51,9 +51,9 @@ jobs:
         python -m uvicorn main:app --host 127.0.0.1 --port 8000 > backend.log 2>&1 &
         cd ..
         
-        # Start frontend Next.js server in background
+        # Start frontend Next.js server in background on 127.0.0.1
         cd frontend
-        npm run dev > frontend.log 2>&1 &
+        npm run dev -- -H 127.0.0.1 > frontend.log 2>&1 &
         cd ..
         
         # Wait for both servers to become responsive
@@ -75,3 +75,13 @@ jobs:
         name: E2E_Test_Report_TutorNow
         path: E2E_Test_Report_TutorNow.xlsx
         if-no-files-found: error
+
+    - name: Upload Debug Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: Server_Debug_Logs
+        path: |
+          backend/backend.log
+          frontend/frontend.log
+        if-no-files-found: ignore
