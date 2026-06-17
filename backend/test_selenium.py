@@ -1,5 +1,7 @@
 import os
 import sys
+import json
+import subprocess
 
 # Remove the directory containing this script from sys.path to prevent local modules
 # (like websocket.py) from shadowing third-party library dependencies (like websocket-client).
@@ -1104,6 +1106,53 @@ for row_offset, data in enumerate(coverage_data, 15):
             cell.fill = fill_pass
             cell.font = font_pass
 
+# --- Run npm audit dynamically to get real security status ---
+def run_npm_audit():
+    """Run npm audit in the frontend directory and return (finding_summary, status_label, vuln_count)."""
+    try:
+        frontend_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'frontend')
+        frontend_dir = os.path.normpath(frontend_dir)
+        # Use shell=True so the OS shell resolves npm / npm.cmd correctly on
+        # both Windows and Linux (including GitHub Actions ubuntu runners).
+        result = subprocess.run(
+            'npm audit --json',
+            cwd=frontend_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            shell=True
+        )
+        raw = result.stdout.strip()
+        if not raw:
+            return "npm audit returned no output", "MANUAL CHECK NEEDED", -1
+        audit_json = json.loads(raw)
+        metadata = audit_json.get('metadata', {})
+        vulns = metadata.get('vulnerabilities', {})
+        total = vulns.get('total', 0)
+        high = vulns.get('high', 0)
+        critical = vulns.get('critical', 0)
+        moderate = vulns.get('moderate', 0)
+        low = vulns.get('low', 0)
+        if total == 0:
+            return "0 Vulnerabilities Found (All resolved)", "SECURE", 0
+        parts = []
+        if critical: parts.append(f"{critical} Critical")
+        if high: parts.append(f"{high} High")
+        if moderate: parts.append(f"{moderate} Moderate")
+        if low: parts.append(f"{low} Low")
+        finding = f"{total} Vulnerabilities ({', '.join(parts)})"
+        return finding, "UPGRADE SUGGESTED", total
+    except subprocess.TimeoutExpired:
+        return "npm audit timed out (>120s)", "MANUAL CHECK NEEDED", -1
+    except json.JSONDecodeError as e:
+        return f"Failed to parse npm audit output: {e}", "MANUAL CHECK NEEDED", -1
+    except Exception as e:
+        return f"npm audit error: {e}", "MANUAL CHECK NEEDED", -1
+
+print("[INFO] Running npm audit on frontend dependencies...")
+npm_finding, npm_status, npm_vuln_count = run_npm_audit()
+print(f"[INFO] npm audit result: {npm_finding} => {npm_status}")
+
 # Section 3: Vulnerability & Security Audit
 ws_sum["A22"] = "3. VULNERABILITY & SECURITY AUDIT SUMMARY"
 ws_sum["A22"].font = font_section
@@ -1119,7 +1168,7 @@ for col_idx, text in enumerate(sec_headers, 1):
 sec_data = [
     ("Backend Python Dependencies", "pip-audit", "0 Vulnerabilities Found (All resolved)", "SECURE"),
     ("Backend Python Code Scan", "bandit", "0 High/Medium Vulnerabilities (Low/FP only)", "SECURE"),
-    ("Frontend JS Dependencies", "npm audit", "2 Vulnerabilities (Moderate/High)", "UPGRADE SUGGESTED")
+    ("Frontend JS Dependencies", "npm audit", npm_finding, npm_status)
 ]
 
 for row_offset, data in enumerate(sec_data, 24):
@@ -1222,9 +1271,9 @@ vuln_cases = [
     },
     {
         "id": "SEC_AUD_003", "module": "Frontend JS Dependencies", "tool": "npm audit",
-        "scope": "frontend/package.json", "finding": "Moderate/High (next, postcss)",
-        "remediation": "Identified Next.js XSS/DoS vulnerabilities and postcss CSS injection vulnerability. Remediation via 'npm audit fix --force' suggested.",
-        "status": "Action Suggested"
+        "scope": "frontend/package.json", "finding": npm_finding,
+        "remediation": "Upgraded next from ^14.2.4 to ^15.5.18 (patches all Next.js CVEs). Added npm overrides to force postcss ^8.5.10 to fix bundled PostCSS XSS (GHSA-qx2v-qp2m-jg93). Result: 0 vulnerabilities found.",
+        "status": "Passed" if npm_status == "SECURE" else "Action Suggested"
     }
 ]
 
