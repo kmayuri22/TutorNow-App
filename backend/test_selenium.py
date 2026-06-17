@@ -1,10 +1,20 @@
 import os
 import sys
+
+# Remove the directory containing this script from sys.path to prevent local modules
+# (like websocket.py) from shadowing third-party library dependencies (like websocket-client).
+script_dir = os.path.dirname(os.path.abspath(__file__))
+while script_dir in sys.path:
+    sys.path.remove(script_dir)
+if sys.path and (sys.path[0] == script_dir or sys.path[0] == ''):
+    sys.path.pop(0)
+
 import datetime
 import time
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
+
 
 # Try to import selenium
 try:
@@ -14,8 +24,11 @@ try:
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
     SELENIUM_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    import traceback
+    traceback.print_exc()
     SELENIUM_AVAILABLE = False
+
 
 print("--------------------------------------------------")
 print("TutorNow Selenium E2E Functional Testing Runner")
