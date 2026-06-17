@@ -68,3 +68,7 @@ htmlcov/
 *.njsproj
 *.sln
 *.sw?
+
+# Test Reports
+*.xlsx
+
