@@ -39,32 +39,28 @@ jobs:
         cd backend
         python seed.py
 
-    - name: Start FastAPI Backend Server
-      run: |
-        cd backend
-        python -m uvicorn main:app --port 8000 &
-        echo "Backend server started in background."
-
     - name: Install Frontend Dependencies
       run: |
         cd frontend
         npm install
 
-    - name: Start Next.js Frontend Server
+    - name: Run Servers and E2E Tests
       run: |
+        # Start backend FastAPI server in background
+        cd backend
+        python -m uvicorn main:app --port 8000 &
+        cd ..
+        
+        # Start frontend Next.js server in background
         cd frontend
         npm run dev &
-        echo "Frontend dev server started in background."
-
-    - name: Wait for Servers to be Responsive
-      run: |
+        cd ..
+        
+        # Wait for both servers to become responsive
         npx wait-on http://localhost:8000 http://localhost:3000 --timeout 60000
-        echo "Both servers are live and responsive!"
-
-    - name: Run E2E Selenium Tests & Generate Excel Report
-      run: |
+        
+        # Run selenium E2E tests
         python backend/test_selenium.py
-        echo "E2E Tests execution completed."
 
     - name: Upload Excel Test Report Artifact
       uses: actions/upload-artifact@v4
