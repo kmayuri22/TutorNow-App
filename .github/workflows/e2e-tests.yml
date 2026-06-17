@@ -56,9 +56,9 @@ jobs:
         npm run dev -- -H 127.0.0.1 > frontend.log 2>&1 &
         cd ..
         
-        # Wait for both servers to become responsive
+        # Wait for both servers to become responsive using Python script
         echo "Waiting for servers to start..."
-        if ! npx wait-on http://127.0.0.1:8000 http://127.0.0.1:3000 --timeout 60000; then
+        if ! python backend/wait_on.py; then
           echo "=== BACKEND LOGS ==="
           cat backend/backend.log
           echo "=== FRONTEND LOGS ==="
