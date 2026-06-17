@@ -931,13 +931,13 @@ if SELENIUM_AVAILABLE:
         
         # Test 1: Homepage Title and Main Load
         print("[RUNNING] TC_STUD_001 / Home Page loading...")
-        driver.get("http://localhost:3000")
+        driver.get("http://127.0.0.1:3000")
         title = driver.title
         print(f"[LOG] Loaded homepage title: {title}")
         
         # Test 2: Click to Login Page
         print("[RUNNING] TC_AUTH_006 / Login Page checks...")
-        driver.get("http://localhost:3000/login")
+        driver.get("http://127.0.0.1:3000/login")
         # Assert form element presence
         email_input = WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.XPATH, "//input[@type='email']"))
