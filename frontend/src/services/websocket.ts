@@ -17,7 +17,10 @@ export const useWebSocket = (userId: number | null) => {
 
     let reconnectTimeout: NodeJS.Timeout;
     const connect = () => {
-      const wsUrl = `ws://localhost:8000/ws/${userId}`;
+      const isTunnel = typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
+      const wsUrl = isTunnel
+        ? `wss://tame-pillows-punch.loca.lt/ws/${userId}`
+        : `ws://localhost:8000/ws/${userId}`;
       const ws = new WebSocket(wsUrl);
       socketRef.current = ws;
 

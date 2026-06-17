@@ -106,7 +106,10 @@ export default function StudentSessionPage() {
   useEffect(() => {
     if (!bookingId || !booking || booking.session_type !== "IN_PERSON") return;
 
-    const wsUrl = `ws://localhost:8000/ws/tracking/${bookingId}`;
+    const isTunnel = typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
+    const wsUrl = isTunnel
+      ? `wss://tame-pillows-punch.loca.lt/ws/tracking/${bookingId}`
+      : `ws://localhost:8000/ws/tracking/${bookingId}`;
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
 
