@@ -101,8 +101,9 @@ def forgot_password(request: schemas.ForgotPasswordRequest, db: Session = Depend
             detail="Email not registered"
         )
     
-    # Generate 6-digit temp code
-    code = ''.join(random.choices(string.digits, k=6))
+    # Generate 6-digit temp code using cryptographically secure generator
+    import secrets
+    code = ''.join(secrets.choice(string.digits) for _ in range(6))
     reset_codes[request.email] = code
     
     # In a real app, send an email. We simulate it by returning the code in the response.
