@@ -41,9 +41,42 @@ async def create_booking(
     if not tutor:
         raise HTTPException(status_code=404, detail="Tutor not found")
 
+    booking_date = booking_data.booking_date
+    session_time = booking_data.session_time
+    session_type = booking_data.session_type
+
+    # Support Mobile App client requests:
+    if booking_data.scheduled_at:
+        try:
+            dt = datetime.strptime(booking_data.scheduled_at, "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            try:
+                dt = datetime.strptime(booking_data.scheduled_at, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid scheduled_at format. Use ISO format.")
+        
+        booking_date = dt.date()
+        start_hour = dt.strftime("%H:%M")
+        duration_mins = booking_data.duration or 60
+        from datetime import timedelta
+        end_dt = dt + timedelta(minutes=duration_mins)
+        end_hour = end_dt.strftime("%H:%M")
+        session_time = f"{start_hour} - {end_hour}"
+        
+        if booking_data.booking_type:
+            if booking_data.booking_type.lower() == "online":
+                session_type = "VIDEO_CALL"
+            elif booking_data.booking_type.lower() == "in-person":
+                session_type = "IN_PERSON"
+            else:
+                session_type = booking_data.booking_type.upper()
+
+    if not booking_date or not session_time:
+        raise HTTPException(status_code=400, detail="booking_date and session_time (or scheduled_at) are required.")
+
     # Find the availability slot that matches the date and session time
-    # The session_time is stored like "10:00:00 - 11:00:00"
-    times = booking_data.session_time.split(" - ")
+    # The session_time is stored like "10:00 - 11:00"
+    times = session_time.split(" - ")
     if len(times) != 2:
         raise HTTPException(status_code=400, detail="Invalid session time format. Must be 'HH:MM - HH:MM'")
 
@@ -56,33 +89,47 @@ async def create_booking(
     # Find slot
     slot = db.query(models.Availability).filter(
         models.Availability.tutor_id == tutor.id,
-        models.Availability.date == booking_data.booking_date,
+        models.Availability.date == booking_date,
         models.Availability.start_time == start_time,
-        models.Availability.end_time == end_time,
-        models.Availability.status == "Available"
+        models.Availability.end_time == end_time
     ).first()
 
-    if not slot:
-        raise HTTPException(status_code=400, detail="Requested availability slot is not available or does not exist")
-
-    # Mark slot as reserved/booked to avoid race conditions
-    slot.status = "Booked"
+    if slot:
+        if slot.status != "Available":
+            raise HTTPException(status_code=400, detail="Requested availability slot is already booked")
+        slot.status = "Booked"
+    else:
+        # Dynamically create the slot as Booked
+        slot = models.Availability(
+            tutor_id=tutor.id,
+            date=booking_date,
+            start_time=start_time,
+            end_time=end_time,
+            status="Booked"
+        )
+        db.add(slot)
     
     # Create the Booking
     new_booking = models.Booking(
         student_id=current_user.id,
         tutor_id=tutor.id,
-        booking_date=booking_data.booking_date,
-        session_time=booking_data.session_time,
+        booking_date=booking_date,
+        session_time=session_time,
         status="Pending",
         payment_status="Unpaid",
-        session_type=booking_data.session_type,
+        session_type=session_type,
         student_lat=booking_data.student_lat,
         student_lng=booking_data.student_lng,
         tutor_lat=booking_data.tutor_lat,
         tutor_lng=booking_data.tutor_lng,
         student_address=booking_data.student_address,
-        tutor_address=booking_data.tutor_address
+        tutor_address=booking_data.tutor_address,
+        # compatibility fields
+        subject=booking_data.subject,
+        booking_type=booking_data.booking_type,
+        scheduled_at=booking_data.scheduled_at,
+        duration=booking_data.duration,
+        notes=booking_data.notes
     )
     db.add(new_booking)
     db.commit()
@@ -90,7 +137,7 @@ async def create_booking(
 
     # Notify Tutor
     tutor_user_id = tutor.user_id
-    tutor_message = f"New booking request received from {current_user.name} for {booking_data.booking_date} at {booking_data.session_time}."
+    tutor_message = f"New booking request received from {current_user.name} for {booking_date} at {session_time}."
     await create_notification(db, tutor_user_id, tutor_message)
 
     return new_booking
@@ -270,4 +317,126 @@ def get_booking_detail(
         if not tutor or booking.tutor_id != tutor.id:
             raise HTTPException(status_code=403, detail="Not authorized to view this booking")
             
+    return booking
+
+
+@router.get("/tutor/pending", response_model=List[schemas.BookingDetailResponse])
+def get_tutor_pending_bookings(
+    current_user: models.User = Depends(auth.RoleChecker(["Tutor"])),
+    db: Session = Depends(get_db)
+):
+    tutor = db.query(models.Tutor).filter(models.Tutor.user_id == current_user.id).first()
+    if not tutor:
+        raise HTTPException(status_code=404, detail="Tutor profile not found")
+    return db.query(models.Booking).filter(
+        models.Booking.tutor_id == tutor.id,
+        models.Booking.status == "Pending"
+    ).order_by(models.Booking.booking_date.desc()).all()
+
+
+@router.get("/tutor/upcoming", response_model=List[schemas.BookingDetailResponse])
+def get_tutor_upcoming_bookings(
+    current_user: models.User = Depends(auth.RoleChecker(["Tutor"])),
+    db: Session = Depends(get_db)
+):
+    tutor = db.query(models.Tutor).filter(models.Tutor.user_id == current_user.id).first()
+    if not tutor:
+        raise HTTPException(status_code=404, detail="Tutor profile not found")
+    return db.query(models.Booking).filter(
+        models.Booking.tutor_id == tutor.id,
+        models.Booking.status == "Accepted"
+    ).order_by(models.Booking.booking_date.desc()).all()
+
+
+@router.put("/{booking_id}/status", response_model=schemas.BookingResponse)
+async def update_booking_status(
+    booking_id: int,
+    status_data: schemas.BookingStatusUpdate,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    new_status = status_data.status
+    
+    if new_status == "Accepted":
+        tutor = db.query(models.Tutor).filter(models.Tutor.user_id == current_user.id).first()
+        if not tutor or booking.tutor_id != tutor.id:
+            raise HTTPException(status_code=403, detail="Not authorized to accept this booking")
+        booking.status = "Accepted"
+        
+        # Notify student
+        student_message = f"Your booking request with Tutor {current_user.name} has been Accepted. Please proceed to payment."
+        await create_notification(db, booking.student_id, student_message)
+        
+    elif new_status == "Rejected":
+        tutor = db.query(models.Tutor).filter(models.Tutor.user_id == current_user.id).first()
+        if not tutor or booking.tutor_id != tutor.id:
+            raise HTTPException(status_code=403, detail="Not authorized to reject this booking")
+        booking.status = "Rejected"
+        
+        # Release availability slot
+        times = booking.session_time.split(" - ")
+        if len(times) == 2:
+            start_time = datetime.strptime(times[0].strip(), "%H:%M").time()
+            end_time = datetime.strptime(times[1].strip(), "%H:%M").time()
+            slot = db.query(models.Availability).filter(
+                models.Availability.tutor_id == tutor.id,
+                models.Availability.date == booking.booking_date,
+                models.Availability.start_time == start_time,
+                models.Availability.end_time == end_time
+            ).first()
+            if slot:
+                slot.status = "Available"
+                
+        # Notify student
+        student_message = f"Your booking request with Tutor {current_user.name} was rejected."
+        await create_notification(db, booking.student_id, student_message)
+        
+    elif new_status == "Cancelled":
+        is_authorized = False
+        notify_user_id = None
+        notif_msg = ""
+        
+        if current_user.role == "Student" and booking.student_id == current_user.id:
+            is_authorized = True
+            notify_user_id = booking.tutor.user_id
+            notif_msg = f"Student {current_user.name} has cancelled their booking for {booking.booking_date} at {booking.session_time}."
+        elif current_user.role == "Tutor":
+            tutor = db.query(models.Tutor).filter(models.Tutor.user_id == current_user.id).first()
+            if tutor and booking.tutor_id == tutor.id:
+                is_authorized = True
+                notify_user_id = booking.student_id
+                notif_msg = f"Tutor {current_user.name} has cancelled your booking for {booking.booking_date} at {booking.session_time}."
+                
+        if not is_authorized:
+            raise HTTPException(status_code=403, detail="Not authorized to cancel this booking")
+            
+        booking.status = "Cancelled"
+        
+        # Release availability slot
+        times = booking.session_time.split(" - ")
+        if len(times) == 2:
+            start_time = datetime.strptime(times[0].strip(), "%H:%M").time()
+            end_time = datetime.strptime(times[1].strip(), "%H:%M").time()
+            slot = db.query(models.Availability).filter(
+                models.Availability.tutor_id == booking.tutor_id,
+                models.Availability.date == booking.booking_date,
+                models.Availability.start_time == start_time,
+                models.Availability.end_time == end_time
+            ).first()
+            if slot:
+                slot.status = "Available"
+                
+        # Push Notification
+        if notify_user_id:
+            await create_notification(db, notify_user_id, notif_msg)
+            
+    else:
+        booking.status = new_status
+        
+    db.commit()
+    db.refresh(booking)
     return booking

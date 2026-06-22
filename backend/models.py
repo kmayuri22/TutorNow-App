@@ -80,6 +80,21 @@ class Booking(Base):
     student_address = Column(String(500), nullable=True)
     tutor_address = Column(String(500), nullable=True)
 
+    # Backward compatibility fields for Mobile App
+    subject = Column(String(255), nullable=True)
+    booking_type = Column(String(50), nullable=True)
+    scheduled_at = Column(String(100), nullable=True)
+    duration = Column(Integer, nullable=True, default=60)
+    notes = Column(Text, nullable=True)
+
+    @property
+    def student_name(self):
+        return self.student.name if self.student else "Student"
+
+    @property
+    def tutor_name(self):
+        return self.tutor.user.name if self.tutor and self.tutor.user else "Tutor"
+
     # Relationships
     student = relationship("User", back_populates="bookings_as_student")
     tutor = relationship("Tutor", back_populates="bookings")

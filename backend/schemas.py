@@ -106,8 +106,8 @@ class AvailabilityResponse(AvailabilityBase):
 # ─────────────────────────────────────────────
 class BookingCreate(BaseModel):
     tutor_id: int
-    booking_date: date
-    session_time: str                        # "10:00 - 11:00"
+    booking_date: Optional[date] = None
+    session_time: Optional[str] = None
     session_type: str = "VIDEO_CALL"         # IN_PERSON | VIDEO_CALL
     student_lat: Optional[float] = None
     student_lng: Optional[float] = None
@@ -115,17 +115,26 @@ class BookingCreate(BaseModel):
     tutor_lng: Optional[float] = None
     student_address: Optional[str] = None
     tutor_address: Optional[str] = None
+    # Compatibility fields for Mobile App
+    subject: Optional[str] = None
+    booking_type: Optional[str] = None
+    scheduled_at: Optional[str] = None
+    duration: Optional[int] = 60
+    notes: Optional[str] = None
 
 class BookingUpdate(BaseModel):
     status: Optional[str] = None
     payment_status: Optional[str] = None
 
+class BookingStatusUpdate(BaseModel):
+    status: str
+
 class BookingResponse(BaseModel):
     id: int
     student_id: int
     tutor_id: int
-    booking_date: date
-    session_time: str
+    booking_date: Optional[date] = None
+    session_time: Optional[str] = None
     status: str
     payment_status: str
     session_type: str
@@ -136,6 +145,14 @@ class BookingResponse(BaseModel):
     tutor_lng: Optional[float] = None
     student_address: Optional[str] = None
     tutor_address: Optional[str] = None
+    # Compatibility fields for Mobile App
+    subject: Optional[str] = None
+    booking_type: Optional[str] = None
+    scheduled_at: Optional[str] = None
+    duration: Optional[int] = 60
+    notes: Optional[str] = None
+    student_name: Optional[str] = None
+    tutor_name: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
 class BookingDetailResponse(BookingResponse):
