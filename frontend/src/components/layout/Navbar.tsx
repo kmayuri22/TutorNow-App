@@ -30,7 +30,7 @@ export default function Navbar() {
     if (isAuthenticated) {
       api.get("/api/notifications")
         .then((res) => setNotifications(res.data))
-        .catch((err) => console.error("Error loading notifications", err));
+        .catch((err) => console.warn("Error loading notifications", err));
     }
   }, [isAuthenticated, setNotifications]);
 

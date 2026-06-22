@@ -1,4 +1,5 @@
 import axios from "axios";
+import { useStore } from "@/store/useStore";
 
 const API_BASE_URL = typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1"
   ? "https://tame-pillows-punch.loca.lt"
@@ -33,12 +34,8 @@ api.interceptors.response.use(
   (error) => {
     if (error.response && error.response.status === 401) {
       if (typeof window !== "undefined") {
-        // Clear local storage and redirect if unauthorized
-        localStorage.removeItem("token");
-        localStorage.removeItem("role");
-        localStorage.removeItem("name");
-        localStorage.removeItem("email");
-        localStorage.removeItem("userId");
+        // Clear local storage and state via store logout
+        useStore.getState().logout();
         
         // Avoid infinite redirect loops on public routes
         const path = window.location.pathname;
