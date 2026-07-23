@@ -5,7 +5,14 @@ import ClientLayoutWrapper from "@/components/common/ClientLayoutWrapper";
 export const metadata: Metadata = {
   title: "TutorNow - Real-Time On-Demand Tutor Booking Platform",
   description: "Book certified, professional tutors in real-time. Manage lessons, availability, and payments securely.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "TutorNow",
+  },
 };
+
 
 export default function RootLayout({
   children,

@@ -1,0 +1,25 @@
+{
+  "short_name": "TutorNow",
+  "name": "TutorNow - On-Demand Tutor Platform",
+  "description": "Book expert tutors near you with real-time GPS tracking and live sessions.",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/"
+}
