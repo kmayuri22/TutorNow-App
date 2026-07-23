@@ -1,7 +1,10 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
+
 import { useStore } from "@/store/useStore";
 import api from "@/services/api";
 import { GoogleMap } from "@/components/maps/GoogleMap";
