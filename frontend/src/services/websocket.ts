@@ -17,10 +17,9 @@ export const useWebSocket = (userId: number | null) => {
 
     let reconnectTimeout: NodeJS.Timeout;
     const connect = () => {
-      const isTunnel = typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
-      const wsUrl = isTunnel
-        ? `wss://tame-pillows-punch.loca.lt/ws/${userId}`
-        : `ws://localhost:8000/ws/${userId}`;
+      const hostname = typeof window !== "undefined" ? window.location.hostname : "localhost";
+      const wsProtocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${wsProtocol}//${hostname}:8000/ws/${userId}`;
       const ws = new WebSocket(wsUrl);
       socketRef.current = ws;
 
@@ -59,9 +58,11 @@ export const useWebSocket = (userId: number | null) => {
         }, 5000);
       };
 
-      ws.onerror = (error) => {
-        console.error("WebSocket error observed:", error);
-        ws.close();
+      ws.onerror = () => {
+        // Silently close on error; onclose will handle reconnect
+        try {
+          ws.close();
+        } catch (_) {}
       };
     };
 

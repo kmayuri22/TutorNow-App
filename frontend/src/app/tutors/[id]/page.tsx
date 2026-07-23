@@ -107,20 +107,21 @@ export default function TutorProfileDetails() {
         setStudentLng(position.coords.longitude);
         setLocationDetected(true);
         setDetectingLocation(false);
-        setStudentAddress("Velachery, Chennai"); // detected default address label
+        setStudentAddress("Saveetha Engineering College, Thandalam, Chennai"); // detected default address label
       },
       (err) => {
         console.error("Geolocation error:", err);
-        setLocationError("Permission denied or location unavailable. Using fallback location coordinates.");
-        // Set fallback Chennai location coordinates
-        setStudentLat(12.9815); // Velachery
-        setStudentLng(80.2180);
-        setStudentAddress("Velachery, Chennai");
+        setLocationError("Permission denied or location unavailable. Using Saveetha Engineering College venue.");
+        // Set Saveetha Engineering College venue coordinates
+        setStudentLat(13.0282); // Saveetha Engineering College
+        setStudentLng(80.0169);
+        setStudentAddress("Saveetha Engineering College, Thandalam, Chennai");
         setLocationDetected(true);
         setDetectingLocation(false);
       },
       { timeout: 10000 }
     );
+
   };
 
   const handleBookSlotClick = () => {
@@ -157,9 +158,9 @@ export default function TutorProfileDetails() {
         student_lat: sessionType === "IN_PERSON" ? studentLat : null,
         student_lng: sessionType === "IN_PERSON" ? studentLng : null,
         student_address: sessionType === "IN_PERSON" ? studentAddress : null,
-        tutor_lat: sessionType === "IN_PERSON" ? (tutor.location?.latitude || 13.0850) : null,
-        tutor_lng: sessionType === "IN_PERSON" ? (tutor.location?.longitude || 80.2101) : null,
-        tutor_address: sessionType === "IN_PERSON" ? (tutor.location?.address || "Anna Nagar, Chennai") : null
+        tutor_lat: sessionType === "IN_PERSON" ? (tutor.location?.latitude || 13.0282) : null,
+        tutor_lng: sessionType === "IN_PERSON" ? (tutor.location?.longitude || 80.0169) : null,
+        tutor_address: sessionType === "IN_PERSON" ? (tutor.location?.address || "Saveetha Engineering College, Thandalam, Chennai") : null
       });
 
       const bookingId = bookingRes.data.id;

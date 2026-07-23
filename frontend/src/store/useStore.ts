@@ -4,6 +4,7 @@ interface User {
   id: number;
   name: string;
   email: string;
+  mobile?: string;
   role: string;
 }
 
@@ -20,9 +21,19 @@ interface AppState {
   role: string | null;
   name: string | null;
   email: string | null;
+  mobile: string | null;
   userId: number | null;
+  tutorStatus: string | null;
   isAuthenticated: boolean;
-  login: (data: { access_token: string; role: string; name: string; email: string; user_id: number }) => void;
+  login: (data: {
+    access_token: string;
+    role: string;
+    name: string;
+    email: string;
+    mobile?: string;
+    user_id: number;
+    tutor_status?: string | null;
+  }) => void;
   logout: () => void;
 
   // Theme Slice
@@ -53,8 +64,10 @@ export const useStore = create<AppState>((set) => {
   const initialRole = getLocalStorageItem("role");
   const initialName = getLocalStorageItem("name");
   const initialEmail = getLocalStorageItem("email");
+  const initialMobile = getLocalStorageItem("mobile");
   const initialUserIdStr = getLocalStorageItem("userId");
   const initialUserId = initialUserIdStr ? parseInt(initialUserIdStr, 10) : null;
+  const initialTutorStatus = getLocalStorageItem("tutorStatus");
   const initialTheme = (getLocalStorageItem("theme") as "light" | "dark") || "light";
 
   return {
@@ -63,7 +76,9 @@ export const useStore = create<AppState>((set) => {
     role: initialRole,
     name: initialName,
     email: initialEmail,
+    mobile: initialMobile,
     userId: initialUserId,
+    tutorStatus: initialTutorStatus,
     isAuthenticated: !!initialToken,
 
     login: (data) => {
@@ -72,14 +87,18 @@ export const useStore = create<AppState>((set) => {
         localStorage.setItem("role", data.role);
         localStorage.setItem("name", data.name);
         localStorage.setItem("email", data.email);
+        if (data.mobile) localStorage.setItem("mobile", data.mobile);
         localStorage.setItem("userId", data.user_id.toString());
+        if (data.tutor_status) localStorage.setItem("tutorStatus", data.tutor_status);
       }
       set({
         token: data.access_token,
         role: data.role,
         name: data.name,
         email: data.email,
+        mobile: data.mobile || null,
         userId: data.user_id,
+        tutorStatus: data.tutor_status || null,
         isAuthenticated: true,
       });
     },
@@ -90,14 +109,18 @@ export const useStore = create<AppState>((set) => {
         localStorage.removeItem("role");
         localStorage.removeItem("name");
         localStorage.removeItem("email");
+        localStorage.removeItem("mobile");
         localStorage.removeItem("userId");
+        localStorage.removeItem("tutorStatus");
       }
       set({
         token: null,
         role: null,
         name: null,
         email: null,
+        mobile: null,
         userId: null,
+        tutorStatus: null,
         isAuthenticated: false,
         notifications: [],
         unreadCount: 0,
@@ -133,7 +156,6 @@ export const useStore = create<AppState>((set) => {
     },
     addNotification: (notification) => {
       set((state) => {
-        // Avoid adding duplicate IDs if already present
         if (state.notifications.some((n) => n.id === notification.id)) {
           return {};
         }

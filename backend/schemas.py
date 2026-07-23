@@ -12,18 +12,40 @@ class Token(BaseModel):
     name: str
     email: str
     user_id: int
+    tutor_status: Optional[str] = None   # "Pending" | "Approved" | "Rejected" – for Tutor role
 
 class TokenData(BaseModel):
     email: Optional[str] = None
     role: Optional[str] = None
+    jti: Optional[str] = None            # JWT ID for session tracking
 
 class UserBase(BaseModel):
     name: str
     email: EmailStr
+    mobile: Optional[str] = None
     role: str = "Student"
 
 class UserCreate(UserBase):
     password: str
+
+class TutorRegisterCreate(BaseModel):
+    """Full registration payload for tutor role (Step 1 + Step 2 combined)."""
+    name: str
+    email: EmailStr
+    mobile: Optional[str] = None
+    password: str
+    role: str = "Tutor"
+    # Tutor profile fields
+    qualification: Optional[str] = None
+    specialization: Optional[str] = None
+    subject: Optional[str] = None          # Comma-separated
+    experience: Optional[int] = 0
+    hourly_rate: Optional[float] = 0.0
+    languages: Optional[str] = None        # Comma-separated
+    teaching_mode: Optional[str] = "Online"
+    location_city: Optional[str] = None
+    location_address: Optional[str] = None
+    bio: Optional[str] = None
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -40,10 +62,12 @@ class ResetPasswordRequest(BaseModel):
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[EmailStr] = None
+    mobile: Optional[str] = None
     password: Optional[str] = None
 
 class UserResponse(UserBase):
     id: int
+    is_suspended: bool = False
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
@@ -51,12 +75,19 @@ class UserResponse(UserBase):
 # Tutor Schemas
 # ─────────────────────────────────────────────
 class TutorBase(BaseModel):
-    subject: str
-    qualification: str
+    subject: str = ""
+    qualification: str = ""
+    specialization: Optional[str] = None
     experience: int = Field(default=0, ge=0)
     hourly_rate: float = Field(default=0.0, ge=0.0)
     bio: Optional[str] = None
     profile_image: Optional[str] = None
+    languages: Optional[str] = None
+    teaching_mode: Optional[str] = "Online"
+    location_city: Optional[str] = None
+    location_address: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 class TutorCreate(TutorBase):
     pass
@@ -64,18 +95,45 @@ class TutorCreate(TutorBase):
 class TutorUpdate(BaseModel):
     subject: Optional[str] = None
     qualification: Optional[str] = None
+    specialization: Optional[str] = None
     experience: Optional[int] = None
     hourly_rate: Optional[float] = None
     bio: Optional[str] = None
     profile_image: Optional[str] = None
     name: Optional[str] = None
+    languages: Optional[str] = None
+    teaching_mode: Optional[str] = None
+    location_city: Optional[str] = None
+    location_address: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    is_online: Optional[bool] = None
+
+class TutorApprovalAction(BaseModel):
+    action: str   # "approve" | "reject" | "request_changes"
+    reason: Optional[str] = None
+
+class TutorDocumentResponse(BaseModel):
+    id: int
+    tutor_id: int
+    file_name: str
+    file_path: str
+    file_type: str
+    doc_label: Optional[str] = None
+    uploaded_at: datetime
+    model_config = ConfigDict(from_attributes=True)
 
 class TutorResponse(TutorBase):
     id: int
     user_id: int
     rating: float
     is_verified: bool
+    is_online: bool = False
+    status: str = "Pending"
+    rejection_reason: Optional[str] = None
+    approved_at: Optional[datetime] = None
     user: UserResponse
+    documents: List[TutorDocumentResponse] = []
     model_config = ConfigDict(from_attributes=True)
 
 # ─────────────────────────────────────────────
@@ -102,7 +160,7 @@ class AvailabilityResponse(AvailabilityBase):
     model_config = ConfigDict(from_attributes=True)
 
 # ─────────────────────────────────────────────
-# Booking Schemas – updated for dual session type
+# Booking Schemas
 # ─────────────────────────────────────────────
 class BookingCreate(BaseModel):
     tutor_id: int
@@ -115,7 +173,6 @@ class BookingCreate(BaseModel):
     tutor_lng: Optional[float] = None
     student_address: Optional[str] = None
     tutor_address: Optional[str] = None
-    # Compatibility fields for Mobile App
     subject: Optional[str] = None
     booking_type: Optional[str] = None
     scheduled_at: Optional[str] = None
@@ -145,7 +202,6 @@ class BookingResponse(BaseModel):
     tutor_lng: Optional[float] = None
     student_address: Optional[str] = None
     tutor_address: Optional[str] = None
-    # Compatibility fields for Mobile App
     subject: Optional[str] = None
     booking_type: Optional[str] = None
     scheduled_at: Optional[str] = None
@@ -153,6 +209,7 @@ class BookingResponse(BaseModel):
     notes: Optional[str] = None
     student_name: Optional[str] = None
     tutor_name: Optional[str] = None
+    created_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
 
 class BookingDetailResponse(BookingResponse):
@@ -165,8 +222,10 @@ class BookingDetailResponse(BookingResponse):
 # ─────────────────────────────────────────────
 class PaymentCreate(BaseModel):
     booking_id: int
-    payment_method: str
+    payment_method: str   # "UPI" | "Paytm" | "Credit Card" | "Debit Card" | "Net Banking"
     amount: float
+    upi_id: Optional[str] = None    # For UPI payments
+    paytm_mobile: Optional[str] = None  # For Paytm
 
 class PaymentResponse(BaseModel):
     id: int
@@ -174,7 +233,9 @@ class PaymentResponse(BaseModel):
     amount: float
     payment_method: str
     transaction_id: str
+    receipt_number: Optional[str] = None
     status: str
+    created_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
 
 # ─────────────────────────────────────────────
@@ -204,11 +265,29 @@ class NotificationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 # ─────────────────────────────────────────────
+# Login History Schemas
+# ─────────────────────────────────────────────
+class LoginHistoryResponse(BaseModel):
+    id: int
+    user_id: Optional[int] = None
+    email: str
+    role: Optional[str] = None
+    ip_address: Optional[str] = None
+    device_info: Optional[str] = None
+    login_status: str
+    failure_reason: Optional[str] = None
+    login_time: datetime
+    logout_time: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+# ─────────────────────────────────────────────
 # Admin Analytics
 # ─────────────────────────────────────────────
 class DashboardAnalytics(BaseModel):
     total_students: int
     total_tutors: int
+    pending_tutors: int
+    approved_tutors: int
     total_bookings: int
     total_payments: float
     pending_bookings: int
@@ -237,7 +316,7 @@ class TutorLocationResponse(BaseModel):
 class LiveTrackingEvent(BaseModel):
     latitude: float
     longitude: float
-    status: str  # Journey Started | Tutor Nearby | Tutor Arrived | Session Started | Session Completed
+    status: Optional[str] = None
 
 class LiveTrackingResponse(BaseModel):
     id: int

@@ -1,23 +1,60 @@
+import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from database import engine, Base
+from contextlib import asynccontextmanager
+from database import engine, Base, SessionLocal
 import models
-from routers import auth, tutors, availability, bookings, payments, reviews, admin, notifications, tracking, video
+import auth as auth_utils
+from routers import auth, tutors, availability, bookings, payments, reviews, admin, notifications, tracking, video, uploads
 from websocket import manager
 
-# Create database tables automatically
-# Note: In production with alembic, this is typically done via migrations,
-# but calling create_all here ensures it runs immediately out-of-the-box for evaluation.
-Base.metadata.create_all(bind=engine)
+
+def ensure_admin_exists():
+    """Auto-create the one predefined Admin account if it doesn't already exist."""
+    db = SessionLocal()
+    try:
+        admin_user = db.query(models.User).filter(models.User.role == "Admin").first()
+        if not admin_user:
+            hashed_pw = auth_utils.get_password_hash("Admin@TutorNow2024!")
+            admin_user = models.User(
+                name="System Admin",
+                email="admin@tutornow.com",
+                mobile="9000000000",
+                password=hashed_pw,
+                role="Admin",
+                is_suspended=False,
+            )
+            db.add(admin_user)
+            db.commit()
+            print("[SUCCESS] Admin account created: admin@tutornow.com / Admin@TutorNow2024!")
+        else:
+            print(f"[OK] Admin account already exists: {admin_user.email}")
+    finally:
+        db.close()
+
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    Base.metadata.create_all(bind=engine)
+    ensure_admin_exists()
+    yield
+    # Shutdown (nothing to clean up)
+
 
 app = FastAPI(
     title="TutorNow API",
     description="Real-Time On-Demand Tutor Booking Platform Backend",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
+# Create database tables automatically (also called in lifespan)
+Base.metadata.create_all(bind=engine)
+
 # CORS configuration
-# Allows standard local frontend servers (port 3000)
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -27,11 +64,23 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In development, allow all origins for easy testing
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    import traceback
+    print("[ERROR] GLOBAL EXCEPTION OCCURRED:")
+    traceback.print_exc()
+
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal Server Error: {str(exc)}"}
+    )
+
 
 # Root endpoint
 @app.get("/")
@@ -49,6 +98,7 @@ app.include_router(admin.router)
 app.include_router(notifications.router)
 app.include_router(tracking.router)
 app.include_router(video.router)
+app.include_router(uploads.router)
 
 # WebSocket Endpoint for Notifications
 @app.websocket("/ws/{user_id}")
@@ -56,10 +106,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
     await manager.connect(user_id, websocket)
     try:
         while True:
-            # Keep connection open. We can listen for messages if needed,
-            # but in TutorNow we mostly push notifications from backend -> client.
             data = await websocket.receive_text()
-            # Echo back keepalive message or echo
             await websocket.send_json({"type": "ping", "data": "alive"})
     except WebSocketDisconnect:
         manager.disconnect(user_id, websocket)

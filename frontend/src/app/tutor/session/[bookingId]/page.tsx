@@ -8,7 +8,8 @@ import { GoogleMap } from "@/components/maps/GoogleMap";
 import { LiveTrackingPanel } from "@/components/maps/LiveTrackingPanel";
 import { VideoSessionPanel } from "@/components/video/VideoSessionPanel";
 import { JitsiMeetRoom } from "@/components/video/JitsiMeetRoom";
-import { ArrowLeft, Loader2, AlertCircle, MapPin, Video, Calendar, Clock } from "lucide-react";
+import { ArrowLeft, Loader2, AlertCircle, MapPin, Video, Calendar, Clock, Navigation } from "lucide-react";
+
 
 interface UserResponse {
   id: number;
@@ -102,14 +103,44 @@ export default function TutorSessionPage() {
     }
   }, [bookingId]);
 
+  // Auto-push GPS immediately on mount (not waiting for Start Journey)
+  useEffect(() => {
+    if (!bookingId || typeof window === "undefined" || !navigator.geolocation) return;
+
+    // Immediately get and push current GPS position to backend
+    const pushCurrentGPS = () => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          setLiveLat(lat);
+          setLiveLng(lng);
+          // Push to backend so student map shows correct position immediately
+          api.post(`/api/tracking/${bookingId}/update-location`, {
+            latitude: lat,
+            longitude: lng,
+            status: trackingStatus || "Booking Accepted",
+          }).catch(() => {});
+        },
+        (err) => console.warn("GPS auto-push failed:", err),
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    };
+
+    // Push once immediately, then every 10 seconds regardless of journey status
+    pushCurrentGPS();
+    const gpsInterval = setInterval(pushCurrentGPS, 10000);
+
+    return () => clearInterval(gpsInterval);
+  }, [bookingId]);
+
   // Set up tracking WebSocket for active tracking room
   useEffect(() => {
     if (!bookingId || !booking || booking.session_type !== "IN_PERSON") return;
 
-    const isTunnel = typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
-    const wsUrl = isTunnel
-      ? `wss://tame-pillows-punch.loca.lt/ws/tracking/${bookingId}`
-      : `ws://localhost:8000/ws/tracking/${bookingId}`;
+    const hostname = typeof window !== "undefined" ? window.location.hostname : "localhost";
+    const wsProtocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${wsProtocol}//${hostname}:8000/ws/tracking/${bookingId}`;
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
 
@@ -137,16 +168,103 @@ export default function TutorSessionPage() {
     };
   }, [bookingId, booking]);
 
-  // Get current physical coordinates of the tutor using browser geolocation
+  // Get current physical coordinates of the tutor using browser high-accuracy geolocation
   const getTutorCoordinates = (): Promise<GeolocationPosition> => {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
         reject(new Error("Geolocation not supported."));
         return;
       }
-      navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000 });
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      });
     });
   };
+
+  // Continuous high-accuracy GPS watch — active from page load (not just Journey Started)
+  useEffect(() => {
+    if (!bookingId || !booking || booking.session_type !== "IN_PERSON") return;
+    if (!navigator.geolocation) return;
+
+    let lastPushTime = 0;
+
+    const pushLocation = (lat: number, lng: number, status: string) => {
+      const now = Date.now();
+      // Throttle: push at most every 5 seconds
+      if (now - lastPushTime < 5000) return;
+      lastPushTime = now;
+
+      api.post(`/api/tracking/${bookingId}/update-location`, {
+        latitude: lat,
+        longitude: lng,
+        status: status,
+      }).catch((err) => console.warn("Live GPS sync issue:", err));
+    };
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        setLiveLat(lat);
+        setLiveLng(lng);
+        // Push live coordinates to backend immediately and every ~5s
+        pushLocation(lat, lng, trackingStatus || "Booking Accepted");
+      },
+      (err) => console.warn("Watch position error:", err),
+      {
+        enableHighAccuracy: true,
+        timeout: 20000,
+        maximumAge: 2000,
+      }
+    );
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
+
+  }, [bookingId, booking, trackingStatus]);
+
+  // Interactive map tap handler (works on any mobile browser / HTTP IP)
+  const handleMapClick = async (lat: number, lng: number) => {
+    setLiveLat(lat);
+    setLiveLng(lng);
+    try {
+      await api.post(`/api/tracking/${bookingId}/update-location`, {
+        latitude: lat,
+        longitude: lng,
+        status: trackingStatus || "Journey Started",
+      });
+    } catch (e) {
+      console.warn("Location update push error:", e);
+    }
+  };
+
+  // Quick movement simulator (e.g. Move 2 KM away, 1 KM away, 500m away, Arrived at Venue)
+  const handleSimulateMove = async (distanceKm: number) => {
+    const sLat = booking?.student_lat ?? 13.0282;
+    const sLng = booking?.student_lng ?? 80.0169;
+    // 1 KM offset ~ 0.009 deg lat, 0.005 deg lng
+    const targetLat = sLat + (distanceKm * 0.009);
+    const targetLng = sLng + (distanceKm * 0.005);
+
+    setLiveLat(targetLat);
+    setLiveLng(targetLng);
+    try {
+      await api.post(`/api/tracking/${bookingId}/update-location`, {
+        latitude: targetLat,
+        longitude: targetLng,
+        status: distanceKm === 0 ? "Tutor Arrived" : distanceKm <= 0.5 ? "Tutor Nearby" : "Journey Started",
+      });
+      if (distanceKm === 0) setTrackingStatus("Tutor Arrived");
+      else if (distanceKm <= 0.5) setTrackingStatus("Tutor Nearby");
+    } catch (e) {
+      console.warn("Simulated movement update error:", e);
+    }
+  };
+
+
 
   // Handler for advancing live tracking status (In-Person workflow)
   const handleTrackingStatusChange = async (newStatus: string) => {
@@ -155,8 +273,9 @@ export default function TutorSessionPage() {
     setError(null);
 
     try {
-      let lat = 13.0850; // Fallback Anna Nagar
-      let lng = 80.2101;
+      let lat = liveLat ?? 13.0282; // Use live coordinates if available, fallback Saveetha Engineering College
+      let lng = liveLng ?? 80.0169;
+
 
       // Request live location if starting journey or nearby
       if (newStatus === "Journey Started" || newStatus === "Tutor Nearby") {
@@ -167,9 +286,10 @@ export default function TutorSessionPage() {
           setLiveLat(lat);
           setLiveLng(lng);
         } catch (gErr) {
-          console.warn("Could not get current coordinates. Using defaults.", gErr);
+          console.warn("Could not get current coordinates. Using current live position.", gErr);
         }
       }
+
 
       if (newStatus === "Journey Started") {
         await api.post(`/api/tracking/${bookingId}/start-journey`, {
@@ -333,31 +453,76 @@ export default function TutorSessionPage() {
             {booking.session_type === "IN_PERSON" ? (
               <div className="flex flex-col gap-6">
                 <GoogleMap
-                  studentLat={booking.student_lat || 12.9815}
-                  studentLng={booking.student_lng || 80.2180}
-                  tutorLat={booking.tutor_lat || 13.0850}
-                  tutorLng={booking.tutor_lng || 80.2101}
+                  studentLat={booking.student_lat ?? 13.0282}
+                  studentLng={booking.student_lng ?? 80.0169}
+                  tutorLat={liveLat ?? booking.tutor_lat ?? 13.0282}
+                  tutorLng={liveLng ?? booking.tutor_lng ?? 80.0169}
                   liveTutorLat={liveLat}
                   liveTutorLng={liveLng}
-                  studentAddress={booking.student_address}
+                  studentAddress={booking.student_address || "Saveetha Engineering College, Thandalam, Chennai"}
                   tutorAddress={booking.tutor_address}
                   trackingStatus={trackingStatus}
+                  onMapClick={handleMapClick}
                 />
+
+                {/* Live Distance Movement Controls */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+                      <Navigation className="h-4 w-4 text-sky-400" />
+                      <span>Live Movement Simulator (Tap Map or Click Distance)</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400">Tap anywhere on map to move pin</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <button
+                      onClick={() => handleSimulateMove(2.0)}
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-700"
+                    >
+                      <span>🚗 2.0 KM Away</span>
+                    </button>
+                    <button
+                      onClick={() => handleSimulateMove(1.0)}
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-700"
+                    >
+                      <span>🚗 1.0 KM Away</span>
+                    </button>
+                    <button
+                      onClick={() => handleSimulateMove(0.4)}
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-yellow-400 text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-700"
+                    >
+                      <span>⚡ 500m Nearby</span>
+                    </button>
+                    <button
+                      onClick={() => handleSimulateMove(0.0)}
+                      className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20"
+                    >
+                      <span>🏁 Arrived (0 KM)</span>
+                    </button>
+                  </div>
+                </div>
+
+
+
               </div>
             ) : (
               <div className="flex flex-col gap-6">
-                {videoSession && videoSession.status === "Active" ? (
+                {videoSession && videoSession.meeting_id ? (
                   <JitsiMeetRoom
                     roomId={videoSession.meeting_id}
                     userName={name || "Tutor"}
+                    userRole="Tutor"
+                    bookingId={booking.id}
+                    onCallEnd={() => fetchDetails()}
                   />
                 ) : (
                   <div className="h-[400px] bg-slate-900/90 border border-slate-800 rounded-2xl flex flex-col justify-center items-center gap-4 text-center p-6 shadow-inner">
                     <Video className="h-14 w-14 text-slate-700 animate-pulse" />
                     <div>
-                      <h3 className="text-slate-200 font-bold text-base">Virtual Classroom offline</h3>
-                      <p className="text-xs text-slate-450 mt-1 max-w-sm mx-auto">
-                        This session will load here once you activate the call in the control panel on the right.
+                      <h3 className="text-slate-200 font-bold text-base">Virtual Classroom not started</h3>
+                      <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                        Click &ldquo;Generate Virtual Classroom&rdquo; in the panel on the right to create your session room and let your student join.
                       </p>
                     </div>
                   </div>

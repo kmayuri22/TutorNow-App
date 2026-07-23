@@ -68,7 +68,74 @@ export default function StudentSessionPage() {
   // Live coordinate states
   const [liveLat, setLiveLat] = useState<number | null>(null);
   const [liveLng, setLiveLng] = useState<number | null>(null);
+  const [liveStudentLat, setLiveStudentLat] = useState<number | null>(null);
+  const [liveStudentLng, setLiveStudentLng] = useState<number | null>(null);
   const [trackingStatus, setTrackingStatus] = useState<string>("Accepted");
+
+  // Continuously watch student's own real device GPS position
+  useEffect(() => {
+    if (typeof window === "undefined" || !navigator.geolocation) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        setLiveStudentLat(pos.coords.latitude);
+        setLiveStudentLng(pos.coords.longitude);
+      },
+      (err) => console.warn("Student GPS watch failed:", err),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 2000 }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
+
+  // Poll backend every 5s for tutor's latest GPS position (fallback for WebSocket)
+  useEffect(() => {
+    if (!bookingId) return;
+
+    const pollTutorLocation = async () => {
+      try {
+        const res = await api.get(`/api/tracking/${bookingId}/location`);
+        if (res.data && res.data.latitude && res.data.longitude) {
+          setLiveLat(res.data.latitude);
+          setLiveLng(res.data.longitude);
+          if (res.data.status) setTrackingStatus(res.data.status);
+        }
+      } catch (err) {
+        // Not yet available, ignore
+      }
+    };
+
+    pollTutorLocation(); // Run immediately
+    const interval = setInterval(pollTutorLocation, 5000);
+    return () => clearInterval(interval);
+  }, [bookingId]);
+
+  // Force sync student's device GPS and fetch latest tutor position
+  const handleSyncGPS = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setLiveStudentLat(pos.coords.latitude);
+          setLiveStudentLng(pos.coords.longitude);
+        },
+        (err) => console.warn("Student GPS sync error:", err),
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+    if (bookingId) {
+      api.get(`/api/tracking/${bookingId}/location`)
+        .then((res: any) => {
+          if (res.data && res.data.latitude && res.data.longitude) {
+            setLiveLat(res.data.latitude);
+            setLiveLng(res.data.longitude);
+            if (res.data.status) setTrackingStatus(res.data.status);
+          }
+        })
+        .catch(() => {});
+    }
+  };
+
+
 
   const socketRef = useRef<WebSocket | null>(null);
 
@@ -102,14 +169,27 @@ export default function StudentSessionPage() {
     }
   }, [bookingId]);
 
-  // Set up tracking WebSocket for real-time updates
+  // Auto-poll every 5s for video session creation (student side)
+  useEffect(() => {
+    if (!booking || booking.session_type !== "VIDEO_CALL" || videoSession) return;
+    const interval = setInterval(() => {
+      api.get(`/api/video/${bookingId}`)
+        .then((res: any) => {
+          setVideoSession(res.data);
+          clearInterval(interval);
+        })
+        .catch(() => {/* not created yet, keep polling */});
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [booking, videoSession, bookingId]);
+
+
   useEffect(() => {
     if (!bookingId || !booking || booking.session_type !== "IN_PERSON") return;
 
-    const isTunnel = typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
-    const wsUrl = isTunnel
-      ? `wss://tame-pillows-punch.loca.lt/ws/tracking/${bookingId}`
-      : `ws://localhost:8000/ws/tracking/${bookingId}`;
+    const hostname = typeof window !== "undefined" ? window.location.hostname : "localhost";
+    const wsProtocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${wsProtocol}//${hostname}:8000/ws/tracking/${bookingId}`;
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
 
@@ -247,33 +327,50 @@ export default function StudentSessionPage() {
               /* Geolocation Route displays */
               <div className="flex flex-col gap-6">
                 <GoogleMap
-                  studentLat={booking.student_lat || 12.9815}
-                  studentLng={booking.student_lng || 80.2180}
-                  tutorLat={booking.tutor_lat || 13.0850}
-                  tutorLng={booking.tutor_lng || 80.2101}
+                  studentLat={liveStudentLat ?? booking.student_lat ?? 13.0282}
+                  studentLng={liveStudentLng ?? booking.student_lng ?? 80.0169}
+                  tutorLat={liveLat ?? booking.tutor_lat ?? 13.0282}
+                  tutorLng={liveLng ?? booking.tutor_lng ?? 80.0169}
+
                   liveTutorLat={liveLat}
                   liveTutorLng={liveLng}
-                  studentAddress={booking.student_address}
+                  liveStudentLat={liveStudentLat}
+                  liveStudentLng={liveStudentLng}
+                  studentAddress={booking.student_address || "Saveetha Engineering College, Thandalam, Chennai"}
                   tutorAddress={booking.tutor_address}
                   trackingStatus={trackingStatus}
+                  onSyncGps={handleSyncGPS}
                 />
+
+
               </div>
             ) : (
               /* Virtual room displays */
               <div className="flex flex-col gap-6">
-                {videoSession && videoSession.status === "Active" ? (
+                {videoSession && videoSession.meeting_id ? (
                   <JitsiMeetRoom
                     roomId={videoSession.meeting_id}
                     userName={name || "Student"}
+                    userRole="Student"
+                    bookingId={booking.id}
+                    onCallEnd={() => router.push("/student/dashboard")}
                   />
                 ) : (
                   <div className="h-[400px] bg-slate-900/90 border border-slate-800 rounded-2xl flex flex-col justify-center items-center gap-4 text-center p-6 shadow-inner">
-                    <Video className="h-14 w-14 text-slate-700 animate-pulse" />
+                    <div className="relative">
+                      <Video className="h-14 w-14 text-slate-700" />
+                      <div className="absolute -top-1 -right-1 h-4 w-4 bg-amber-500 rounded-full animate-ping" />
+                    </div>
                     <div>
-                      <h3 className="text-slate-200 font-bold text-base">Virtual Classroom offline</h3>
-                      <p className="text-xs text-slate-450 mt-1 max-w-sm mx-auto">
-                        This session will load here as soon as your tutor starts the live call. You can click standard join buttons in the dashboard overlay.
+                      <h3 className="text-slate-200 font-bold text-base">Waiting for Tutor to Start</h3>
+                      <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                        Your tutor needs to click &ldquo;Generate Classroom&rdquo; from their session page. This page auto-refreshes every 5 seconds.
                       </p>
+                    </div>
+                    <div className="flex gap-1 mt-2">
+                      {[0,1,2].map(i => (
+                        <span key={i} className="h-1.5 w-4 rounded-full bg-indigo-700 animate-pulse" style={{ animationDelay: `${i * 200}ms` }} />
+                      ))}
                     </div>
                   </div>
                 )}

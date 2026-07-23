@@ -8,9 +8,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useStore } from "@/store/useStore";
 import api from "@/services/api";
-import { Mail, Lock, LogIn, Loader2, AlertCircle } from "lucide-react";
+import { Mail, Lock, LogIn, Loader2, AlertCircle, Clock, XCircle } from "lucide-react";
 
-// Schema for form validation
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
   password: z.string().min(6, "Password must be at least 6 characters long"),
@@ -22,6 +21,8 @@ export default function Login() {
   const router = useRouter();
   const loginUser = useStore((state) => state.login);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [pendingNotice, setPendingNotice] = useState<boolean>(false);
+  const [rejectionNotice, setRejectionNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const {
@@ -35,6 +36,9 @@ export default function Login() {
   const onSubmit = async (data: LoginForm) => {
     setLoading(true);
     setErrorMessage(null);
+    setPendingNotice(false);
+    setRejectionNotice(null);
+
     try {
       const response = await api.post("/api/auth/login", data);
       
@@ -54,8 +58,16 @@ export default function Login() {
       }
     } catch (error: any) {
       console.error(error);
-      const detail = error.response?.data?.detail || "Invalid email or password. Please try again.";
-      setErrorMessage(detail);
+      const detail = error.response?.data?.detail;
+
+      if (detail === "PENDING_APPROVAL") {
+        setPendingNotice(true);
+      } else if (typeof detail === "string" && detail.startsWith("REJECTED:")) {
+        const reason = detail.replace("REJECTED:", "");
+        setRejectionNotice(reason || "Application did not meet criteria.");
+      } else {
+        setErrorMessage(detail || "Invalid email or password. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -68,8 +80,30 @@ export default function Login() {
         {/* Title */}
         <div className="text-center mb-8 flex flex-col gap-2">
           <h1 className="text-2xl sm:text-3xl font-extrabold">Log In to TutorNow</h1>
-          <p className="text-sm text-slate-500">Access your student, tutor, or admin panel</p>
+          <p className="text-sm text-slate-500">Access your student, tutor, or admin portal</p>
         </div>
+
+        {/* Pending Approval Notice */}
+        {pendingNotice && (
+          <div className="mb-6 p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2.5">
+            <Clock className="h-5 w-5 shrink-0 mt-0.5 text-amber-500" />
+            <div>
+              <span className="font-bold block text-sm mb-0.5">Account Pending Approval</span>
+              <span>Your tutor profile & qualification documents are currently being reviewed by the Admin. You will receive access as soon as your account is approved.</span>
+            </div>
+          </div>
+        )}
+
+        {/* Rejection Notice */}
+        {rejectionNotice && (
+          <div className="mb-6 p-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-xs text-red-700 dark:text-red-300 flex items-start gap-2.5">
+            <XCircle className="h-5 w-5 shrink-0 mt-0.5 text-red-500" />
+            <div>
+              <span className="font-bold block text-sm mb-0.5">Registration Rejected</span>
+              <span>Reason: {rejectionNotice}</span>
+            </div>
+          </div>
+        )}
 
         {/* Global Error message */}
         {errorMessage && (

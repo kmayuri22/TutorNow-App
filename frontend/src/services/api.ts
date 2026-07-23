@@ -1,8 +1,16 @@
 import axios from "axios";
 
-const API_BASE_URL = typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1"
-  ? "https://tame-pillows-punch.loca.lt"
-  : "http://localhost:8000";
+const getApiBaseUrl = () => {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname || "localhost";
+    const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+    return `${protocol}//${hostname}:8000`;
+  }
+  return "http://localhost:8000";
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -11,10 +19,14 @@ export const api = axios.create({
   },
 });
 
-// Request interceptor to automatically add Authorization token
+// Request interceptor to automatically set dynamic baseURL and Authorization token
 api.interceptors.request.use(
   (config) => {
     if (typeof window !== "undefined") {
+      // Use current window origin (same host & port 3000 as Next.js frontend)
+      // Next.js rewrites will proxy all /api/* calls internally to FastAPI on http://127.0.0.1:8000
+      config.baseURL = process.env.NEXT_PUBLIC_API_URL || window.location.origin;
+
       const token = localStorage.getItem("token");
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;

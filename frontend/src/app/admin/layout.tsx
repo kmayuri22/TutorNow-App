@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/store/useStore";
 import Link from "next/link";
+import api from "@/services/api";
 import { 
   User, LayoutDashboard, ShieldCheck, 
-  Settings, LogOut, Loader2, Users, FileText
+  Settings, LogOut, Loader2, Users, FileText, Clock, UserCheck
 } from "lucide-react";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -15,7 +16,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
-    // If not authenticated or not an admin, redirect
     if (!isAuthenticated) {
       router.push("/login?msg=unauthorized");
     } else if (role !== "Admin") {
@@ -36,9 +36,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     );
   }
 
-  const handleLogout = () => {
-    logout();
-    router.push("/");
+  const handleLogout = async () => {
+    try {
+      await api.post("/api/auth/logout");
+    } catch (e) {
+      console.warn("Logout API notice:", e);
+    } finally {
+      logout();
+      router.push("/login");
+    }
   };
 
   return (
@@ -47,14 +53,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Sidebar - Desktop */}
       <aside className="hidden md:flex flex-col w-64 bg-white dark:bg-slate-900 border-r py-6 px-4 shrink-0 text-left">
         <div className="px-3 pb-6 border-b mb-6 flex items-center gap-2">
-          <ShieldCheck className="h-5 w-5 text-red-500" />
-          <span className="font-bold text-xs text-slate-450 uppercase tracking-wider">Admin Console</span>
+          <ShieldCheck className="h-6 w-6 text-red-500" />
+          <span className="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">Admin Console</span>
         </div>
         
         <div className="flex-1 flex flex-col gap-1.5">
           <Link href="/admin/dashboard" className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-semibold transition">
-            <LayoutDashboard className="h-4.5 w-4.5 text-slate-400" />
-            Analytics Portal
+            <LayoutDashboard className="h-4.5 w-4.5 text-primary-500" />
+            Admin Dashboard
           </Link>
         </div>
 
@@ -63,7 +69,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             onClick={handleLogout}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/20 dark:hover:text-red-400 text-sm font-semibold text-slate-600 dark:text-slate-350 transition text-left"
           >
-            <LogOut className="h-4.5 w-4.5 text-slate-450" />
+            <LogOut className="h-4.5 w-4.5 text-slate-400" />
             Log Out
           </button>
         </div>
@@ -71,7 +77,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       {/* Main Panel Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
-        <main className="p-4 sm:p-8 max-w-6xl w-full mx-auto">
+        <main className="p-4 sm:p-8 max-w-7xl w-full mx-auto">
           {children}
         </main>
       </div>

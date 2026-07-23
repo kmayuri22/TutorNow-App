@@ -1,0 +1,25 @@
+
+> tutornow-frontend@1.0.0 dev
+> next dev
+
+   ▲ Next.js 15.5.18
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.197.1:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 5.9s
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ○ Compiling / ...
+ ✓ Compiled / in 7.2s (880 modules)
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ GET / 200 in 7372ms
+ ✓ Compiled in 1680ms (334 modules)
+ GET / 200 in 309ms
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ✓ Compiled in 332ms (320 modules)
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ GET / 200 in 328ms
+ GET / 200 in 164ms
+ GET / 200 in 566ms
+ GET / 200 in 350ms

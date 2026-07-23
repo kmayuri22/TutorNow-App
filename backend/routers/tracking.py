@@ -105,37 +105,39 @@ async def start_journey(
 async def update_location(
     booking_id: int,
     location: schemas.LiveTrackingEvent,
-    current_user: models.User = Depends(auth.RoleChecker(["Tutor"])),
+    current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Tutor sends a GPS update during journey — broadcast to student in real time."""
-    tutor = db.query(models.Tutor).filter(models.Tutor.user_id == current_user.id).first()
-    if not tutor:
-        raise HTTPException(status_code=404, detail="Tutor profile not found")
+    """Tutor sends a GPS update — broadcast to student in real time."""
+    booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
 
-    booking = _get_tutor_booking(booking_id, tutor, db)
+    tutor = db.query(models.Tutor).filter(models.Tutor.user_id == current_user.id).first()
 
     # Upsert tutor location
-    tutor_loc = db.query(models.TutorLocation).filter(models.TutorLocation.tutor_id == tutor.id).first()
-    if tutor_loc:
-        tutor_loc.latitude = location.latitude
-        tutor_loc.longitude = location.longitude
-        tutor_loc.updated_at = datetime.datetime.utcnow()
-    else:
-        tutor_loc = models.TutorLocation(tutor_id=tutor.id, latitude=location.latitude, longitude=location.longitude)
-        db.add(tutor_loc)
+    if tutor:
+        tutor_loc = db.query(models.TutorLocation).filter(models.TutorLocation.tutor_id == tutor.id).first()
+        if tutor_loc:
+            tutor_loc.latitude = location.latitude
+            tutor_loc.longitude = location.longitude
+            tutor_loc.updated_at = datetime.datetime.utcnow()
+        else:
+            tutor_loc = models.TutorLocation(tutor_id=tutor.id, latitude=location.latitude, longitude=location.longitude)
+            db.add(tutor_loc)
 
     # Record tracking event
+    event_status = location.status or booking.tracking_status or "Booking Accepted"
     event = models.LiveTracking(
         booking_id=booking_id,
         latitude=location.latitude,
         longitude=location.longitude,
-        status=location.status
+        status=event_status
     )
     db.add(event)
 
     # Update booking tracking_status if changed
-    if booking.tracking_status != location.status:
+    if location.status and booking.tracking_status != location.status:
         booking.tracking_status = location.status
     db.commit()
     db.refresh(event)
@@ -145,7 +147,7 @@ async def update_location(
         "booking_id": booking_id,
         "latitude": location.latitude,
         "longitude": location.longitude,
-        "status": location.status,
+        "status": event_status,
         "timestamp": str(event.timestamp)
     }
     await manager.broadcast_tracking(booking_id, payload)
@@ -160,6 +162,56 @@ async def update_location(
                       f"✅ Your tutor {current_user.name} has arrived!")
 
     return event
+
+
+@router.get("/{booking_id}/location")
+def get_latest_location(
+    booking_id: int,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get the most recent GPS location for this booking's tutor — used for student polling fallback."""
+    booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    # Try latest LiveTracking event first
+    event = db.query(models.LiveTracking).filter(
+        models.LiveTracking.booking_id == booking_id
+    ).order_by(models.LiveTracking.timestamp.desc()).first()
+
+    if event:
+        return {
+            "latitude": event.latitude,
+            "longitude": event.longitude,
+            "status": event.status,
+            "timestamp": str(event.timestamp)
+        }
+
+    # Fallback: use TutorLocation table (stored tutor position)
+    loc = db.query(models.TutorLocation).filter(
+        models.TutorLocation.tutor_id == booking.tutor_id
+    ).first()
+    if loc:
+        return {
+            "latitude": loc.latitude,
+            "longitude": loc.longitude,
+            "status": booking.tracking_status or "Booking Accepted",
+            "timestamp": str(loc.updated_at)
+        }
+
+    # Last fallback: use booking's stored tutor coordinates
+    if booking.tutor_lat and booking.tutor_lng:
+        return {
+            "latitude": booking.tutor_lat,
+            "longitude": booking.tutor_lng,
+            "status": booking.tracking_status or "Booking Accepted",
+            "timestamp": None
+        }
+
+    raise HTTPException(status_code=404, detail="No GPS data yet")
+
+
 
 
 @router.post("/{booking_id}/mark-arrived")

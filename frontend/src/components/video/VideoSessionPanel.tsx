@@ -27,7 +27,20 @@ export const VideoSessionPanel: React.FC<VideoSessionPanelProps> = ({
 
   const copyToClipboard = () => {
     if (meetingLink) {
-      navigator.clipboard.writeText(meetingLink);
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(meetingLink).catch(() => {});
+        } else {
+          const textArea = document.createElement("textarea");
+          textArea.value = meetingLink;
+          document.body.appendChild(textArea);
+          textArea.select();
+          document.execCommand("copy");
+          document.body.removeChild(textArea);
+        }
+      } catch (err) {
+        console.warn("Clipboard write failed:", err);
+      }
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
