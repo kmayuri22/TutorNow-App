@@ -209,8 +209,69 @@ def seed_database():
     db.add_all(notifs)
     db.commit()
 
-    print("Database seeded successfully!")
-    db.close()
+def seed_if_empty():
+    db: Session = SessionLocal()
+    try:
+        user_count = db.query(models.User).filter(models.User.role != "Admin").count()
+        if user_count > 0:
+            print("[OK] Demo users already exist in database.")
+            return
+
+        print("[INFO] DB has no demo users. Populating demo accounts & bookings...")
+        # Create Student
+        student_pw = auth.get_password_hash("student123")
+        student = models.User(
+            name="Rajesh Kumar",
+            email="student@tutornow.com",
+            mobile="9876543210",
+            password=student_pw,
+            role="Student"
+        )
+        db.add(student)
+
+        # Create Tutor
+        tutor_pw = auth.get_password_hash("tutor123")
+        tutor_user = models.User(
+            name="Dr. Sarah Jenkins",
+            email="tutor@tutornow.com",
+            mobile="9876543211",
+            password=tutor_pw,
+            role="Tutor"
+        )
+        db.add(tutor_user)
+        db.commit()
+
+        tutor_profile = models.Tutor(
+            user_id=tutor_user.id,
+            bio="Ph.D. in Physics with 8+ years of experience teaching high school and college students.",
+            subjects="Physics, Mathematics, Calculus",
+            hourly_rate=450.0,
+            experience_years=8,
+            education="Ph.D. in Applied Physics, IIT Madras",
+            is_approved=True,
+            city="Chennai",
+            rating=4.9,
+            total_reviews=24
+        )
+        db.add(tutor_profile)
+        db.commit()
+
+        tutor_loc = models.TutorLocation(
+            tutor_id=tutor_profile.id,
+            latitude=13.0282,
+            longitude=80.0169,
+            address="Saveetha Engineering College, Thandalam, Chennai"
+        )
+        db.add(tutor_loc)
+        db.commit()
+
+        print("[SUCCESS] Auto-seeded default student and tutor accounts.")
+    except Exception as e:
+        print(f"[WARN] Error during seed_if_empty: {e}")
+    finally:
+        db.close()
+
 
 if __name__ == "__main__":
     seed_database()
+

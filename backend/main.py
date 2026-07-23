@@ -40,8 +40,14 @@ async def lifespan(app: FastAPI):
     # Startup
     Base.metadata.create_all(bind=engine)
     ensure_admin_exists()
+    try:
+        from seed import seed_if_empty
+        seed_if_empty()
+    except Exception as e:
+        print(f"[WARN] Auto-seed status: {e}")
     yield
     # Shutdown (nothing to clean up)
+
 
 
 app = FastAPI(
