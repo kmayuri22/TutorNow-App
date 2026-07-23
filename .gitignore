@@ -17,13 +17,21 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Local env files (contain secrets)
+# Local env files (contain secrets — never commit these)
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
-*.env
+
+# Keep .env.example (template) and .env.production (Vercel-safe)
+!.env.example
+!.env.production
+
+# Log files
+*.log
+frontend/frontend.log
+
 
 # TypeScript build info
 *.tsbuildinfo

@@ -5,19 +5,25 @@ const nextConfig = {
     domains: ["images.unsplash.com"],
   },
   eslint: {
-    // Warning: This allows production builds to successfully complete even if
-    // the project has ESLint errors.
+    // Allow production builds to complete even if there are ESLint errors
     ignoreDuringBuilds: true,
   },
   typescript: {
-    // Ignore typescript errors during build to make sure run works out-of-the-box
+    // Allow production builds to complete even if there are TypeScript errors
     ignoreBuildErrors: true,
   },
   async rewrites() {
+    // In production, use NEXT_PUBLIC_API_URL (Render backend URL)
+    // In development, proxy to local FastAPI on port 8000
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
     return [
       {
         source: "/api/:path*",
-        destination: "http://127.0.0.1:8000/api/:path*",
+        destination: `${backendUrl}/api/:path*`,
+      },
+      {
+        source: "/ws/:path*",
+        destination: `${backendUrl}/ws/:path*`,
       },
     ];
   },
