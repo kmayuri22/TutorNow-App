@@ -1,8 +1,27 @@
 # TutorNow - Real-Time On-Demand Tutor Booking Platform
 
+[![Deployment Status](https://img.shields.io/badge/Deployment-Live-success)](https://tutor-now-app-y3bo.vercel.app)
+[![Vercel Frontend](https://img.shields.io/badge/Frontend-Vercel-black?logo=vercel)](https://tutor-now-app-y3bo.vercel.app)
+[![Render Backend](https://img.shields.io/badge/Backend-Render-blue?logo=render)](https://tutornow-backend-z3mh.onrender.com)
+
+## 🌐 Live Production Application
+- 🖥️ **Live Web Application**: [https://tutor-now-app-y3bo.vercel.app](https://tutor-now-app-y3bo.vercel.app)
+- ⚡ **Backend API Endpoint**: [https://tutornow-backend-z3mh.onrender.com](https://tutornow-backend-z3mh.onrender.com)
+- 📚 **Swagger API Documentation**: [https://tutornow-backend-z3mh.onrender.com/docs](https://tutornow-backend-z3mh.onrender.com/docs)
+
+### 🔑 Pre-Seeded Demo Login Credentials
+| Role | Email | Password |
+|---|---|---|
+| **Admin** | `admin@tutornow.com` | `Admin@TutorNow2024!` |
+| **Student** | `student@tutornow.com` | `student123` |
+| **Tutor** | `tutor@tutornow.com` | `tutor123` |
+
+---
+
 TutorNow is a full-stack educational web application designed to connect students with verified expert tutors in real-time. Students can search/filter tutors, request lessons, checkout securely via a mock payment portal, submit ratings, and communicate slots dynamically. Tutors can set active hours, accept/reject requests, and review dashboards, while administrators verify profiles and audit transactions.
 
 ---
+
 
 ## Repository Structure
 
