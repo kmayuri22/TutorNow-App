@@ -12,4 +12,7 @@ services:
         generateValue: true
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "1440"
+      - key: DATABASE_URL
+        value: postgresql://postgres.oedafagwhpatywxvmgwj:harshitha%407890@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres?sslmode=require
     autoDeploy: true
+
