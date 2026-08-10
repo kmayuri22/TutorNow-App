@@ -43,10 +43,37 @@ def search_tutors(
     if max_price is not None:
         query = query.filter(models.Tutor.hourly_rate <= max_price)
     if teaching_mode:
+        if teaching_mode in ["Offline", "In-Person"]:
+            # For In-Person sessions, show tutor ONLY when actively logged in (is_online == True)
+            query = query.filter(
+                models.Tutor.is_online == True,
+                or_(
+                    models.Tutor.teaching_mode == "Offline",
+                    models.Tutor.teaching_mode == "Both",
+                )
+            )
+        elif teaching_mode in ["Online", "Video Call", "VIDEO_CALL"]:
+            # For Video Call sessions, scheduled in advance, tutor visible even if not logged in
+            query = query.filter(
+                or_(
+                    models.Tutor.teaching_mode == "Online",
+                    models.Tutor.teaching_mode == "Both",
+                )
+            )
+        else:
+            query = query.filter(
+                or_(
+                    models.Tutor.teaching_mode == teaching_mode,
+                    models.Tutor.teaching_mode == "Both",
+                )
+            )
+    else:
+        # Default listing: include Online/Both tutors (online or offline),
+        # but purely Offline tutors are shown ONLY when actively logged in (is_online == True)
         query = query.filter(
             or_(
-                models.Tutor.teaching_mode == teaching_mode,
-                models.Tutor.teaching_mode == "Both",
+                models.Tutor.teaching_mode != "Offline",
+                models.Tutor.is_online == True,
             )
         )
     if language:

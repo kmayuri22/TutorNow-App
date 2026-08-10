@@ -28,19 +28,20 @@ export default function Login() {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
   });
 
-  const onSubmit = async (data: LoginForm) => {
+  const performLogin = async (email: string, password: string) => {
     setLoading(true);
     setErrorMessage(null);
     setPendingNotice(false);
     setRejectionNotice(null);
 
     try {
-      const response = await api.post("/api/auth/login", data);
+      const response = await api.post("/api/auth/login", { email, password });
       
       // Save credentials in Zustand store and localStorage
       loginUser(response.data);
@@ -65,6 +66,8 @@ export default function Login() {
       } else if (typeof detail === "string" && detail.startsWith("REJECTED:")) {
         const reason = detail.replace("REJECTED:", "");
         setRejectionNotice(reason || "Application did not meet criteria.");
+      } else if (typeof detail === "string" && (detail.includes("OperationalError") || detail.includes("translate host name") || detail.includes("psycopg2") || detail.includes("sqlalchemy"))) {
+        setErrorMessage("Database connection issue. Please try logging in again.");
       } else {
         setErrorMessage(detail || "Invalid email or password. Please try again.");
       }
@@ -73,12 +76,16 @@ export default function Login() {
     }
   };
 
+  const onSubmit = (data: LoginForm) => {
+    performLogin(data.email, data.password);
+  };
+
   return (
-    <div className="py-20 bg-slate-50 dark:bg-slate-950 min-h-screen flex justify-center items-center px-4 transition-colors duration-200">
+    <div className="py-16 bg-slate-50 dark:bg-slate-950 min-h-screen flex justify-center items-center px-4 transition-colors duration-200">
       <div className="max-w-md w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-2xl p-8 text-left">
         
         {/* Title */}
-        <div className="text-center mb-8 flex flex-col gap-2">
+        <div className="text-center mb-6 flex flex-col gap-2">
           <h1 className="text-2xl sm:text-3xl font-extrabold">Log In to TutorNow</h1>
           <p className="text-sm text-slate-500">Access your student, tutor, or admin portal</p>
         </div>

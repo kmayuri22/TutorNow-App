@@ -218,6 +218,7 @@ def seed_if_empty():
             return
 
         print("[INFO] DB has no demo users. Populating demo accounts & bookings...")
+
         # Create Student
         student_pw = auth.get_password_hash("student123")
         student = models.User(
@@ -229,7 +230,7 @@ def seed_if_empty():
         )
         db.add(student)
 
-        # Create Tutor
+        # Create Approved Tutor
         tutor_pw = auth.get_password_hash("tutor123")
         tutor_user = models.User(
             name="Dr. Sarah Jenkins",
@@ -243,31 +244,48 @@ def seed_if_empty():
 
         tutor_profile = models.Tutor(
             user_id=tutor_user.id,
-            bio="Ph.D. in Physics with 8+ years of experience teaching high school and college students.",
-            subjects="Physics, Mathematics, Calculus",
-            hourly_rate=450.0,
-            experience_years=8,
-            education="Ph.D. in Applied Physics, IIT Madras",
-            is_approved=True,
-            city="Chennai",
-            rating=4.9,
-            total_reviews=24
+            subject="Mathematics, Calculus & Statistics",
+            qualification="Ph.D. in Applied Mathematics, IIT Madras",
+            specialization="Higher Secondary & Engineering Mathematics",
+            experience=8,
+            hourly_rate=500.0,
+            bio="Hello! I am Dr. Sarah Jenkins, an IIT graduate with over 8 years of teaching experience.",
+            profile_image="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400",
+            rating=4.8,
+            languages="English, Hindi, Tamil",
+            teaching_mode="Both",
+            location_city="Chennai",
+            location_address="Anna Nagar, Chennai, Tamil Nadu",
+            latitude=13.0850,
+            longitude=80.2101,
+            is_online=True,
+            status="Approved",
+            is_verified=True,
+            approved_at=datetime.datetime.utcnow()
         )
         db.add(tutor_profile)
         db.commit()
 
         tutor_loc = models.TutorLocation(
             tutor_id=tutor_profile.id,
-            latitude=13.0282,
-            longitude=80.0169,
-            address="Saveetha Engineering College, Thandalam, Chennai"
+            latitude=13.0850,
+            longitude=80.2101,
+            address="Anna Nagar, Chennai"
         )
         db.add(tutor_loc)
+
+        # Notifications
+        notifs = [
+            models.Notification(user_id=student.id, message="Welcome to TutorNow! Browse tutors to book your first session.", status="Unread"),
+            models.Notification(user_id=tutor_user.id, message="Welcome to TutorNow! Your tutor profile is approved.", status="Unread"),
+        ]
+        db.add_all(notifs)
         db.commit()
 
         print("[SUCCESS] Auto-seeded default student and tutor accounts.")
     except Exception as e:
-        print(f"[WARN] Error during seed_if_empty: {e}")
+        db.rollback()
+        print("[WARN] Error during seed_if_empty: " + str(e))
     finally:
         db.close()
 

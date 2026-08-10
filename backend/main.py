@@ -82,6 +82,13 @@ async def global_exception_handler(request, exc):
     print("[ERROR] GLOBAL EXCEPTION OCCURRED:")
     traceback.print_exc()
 
+    err_str = str(exc)
+    if "OperationalError" in type(exc).__name__ or "could not translate host name" in err_str or "psycopg2" in err_str or "sqlalchemy" in err_str.lower():
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Database connection temporarily interrupted. Please try logging in again."}
+        )
+
     return JSONResponse(
         status_code=500,
         content={"detail": f"Internal Server Error: {str(exc)}"}

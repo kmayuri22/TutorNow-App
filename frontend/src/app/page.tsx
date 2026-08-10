@@ -3,13 +3,15 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useStore } from "@/store/useStore";
 import { 
   Search, BookOpen, Star, Shield, Clock, Award, Users, 
-  ArrowRight, Check, MessageSquare, Compass
+  ArrowRight, Check, MessageSquare, Compass, LogIn, UserPlus
 } from "lucide-react";
 
 export default function Home() {
   const router = useRouter();
+  const { isAuthenticated, role } = useStore();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSubject, setSelectedSubject] = useState("");
 
@@ -297,12 +299,31 @@ export default function Home() {
             Create a student account today and get matched with certified tutors. Tutors can also register to open calendars and monetize their academic skills.
           </p>
           <div className="flex flex-wrap justify-center gap-4 mt-2">
-            <Link href="/register" className="px-6 py-3 rounded-xl bg-white text-primary-700 font-semibold text-sm hover:bg-slate-50 shadow transition">
-              Find a Tutor Now
-            </Link>
-            <Link href="/register?role=Tutor" className="px-6 py-3 rounded-xl border border-white hover:bg-white/10 font-semibold text-sm transition">
-              Apply as a Tutor
-            </Link>
+            {isAuthenticated ? (
+              <>
+                <Link href="/tutors" className="px-6 py-3 rounded-xl bg-white text-primary-700 font-semibold text-sm hover:bg-slate-50 shadow transition flex items-center gap-2">
+                  <Search className="h-4 w-4" />
+                  Find a Tutor Now
+                </Link>
+                <Link 
+                  href={role === "Student" ? "/student/dashboard" : role === "Tutor" ? "/tutor/dashboard" : "/admin/dashboard"} 
+                  className="px-6 py-3 rounded-xl border border-white hover:bg-white/10 font-semibold text-sm transition"
+                >
+                  My Dashboard
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link href="/login" className="px-6 py-3 rounded-xl bg-white text-primary-700 font-semibold text-sm hover:bg-slate-50 shadow transition flex items-center gap-2">
+                  <LogIn className="h-4 w-4" />
+                  Log In to Existing Account
+                </Link>
+                <Link href="/register" className="px-6 py-3 rounded-xl border border-white hover:bg-white/10 font-semibold text-sm transition flex items-center gap-2">
+                  <UserPlus className="h-4 w-4" />
+                  Create New Account
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </section>

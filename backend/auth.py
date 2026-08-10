@@ -7,6 +7,7 @@ import jwt
 from jwt.exceptions import InvalidTokenError
 import bcrypt
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from database import get_db
 from config import settings
 import models
@@ -68,7 +69,7 @@ def get_current_user(
     except InvalidTokenError:
         raise credentials_exception
 
-    user = db.query(models.User).filter(models.User.email == email).first()
+    user = db.query(models.User).filter(func.lower(models.User.email) == email.lower().strip()).first()
     if user is None:
         raise credentials_exception
 

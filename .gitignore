@@ -79,4 +79,6 @@ htmlcov/
 
 # Test Reports
 *.xlsx
+*.apk
+
 

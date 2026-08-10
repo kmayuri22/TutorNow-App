@@ -139,13 +139,21 @@ export default function Register() {
       <div className="max-w-xl w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-2xl p-6 sm:p-8 text-left">
         
         {/* Header */}
-        <div className="text-center mb-8 flex flex-col gap-2">
+        <div className="text-center mb-6 flex flex-col gap-2">
           <h1 className="text-2xl sm:text-3xl font-extrabold">Create Your Account</h1>
           <p className="text-sm text-slate-500">
             {selectedRole === "Tutor"
               ? "Join TutorNow as a verified tutor and share your expertise"
               : "Join TutorNow to find and book expert tutors near you"}
           </p>
+        </div>
+
+        {/* Existing Account Notice Banner */}
+        <div className="mb-6 p-3.5 rounded-xl bg-primary-50 dark:bg-primary-950/40 border border-primary-200 dark:border-primary-800 text-xs text-primary-800 dark:text-primary-200 flex items-center justify-between gap-3">
+          <span className="font-medium">Already have a TutorNow account?</span>
+          <Link href="/login" className="shrink-0 px-3.5 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs transition shadow-sm">
+            Log In Here
+          </Link>
         </div>
 
         {/* Success Alert */}
@@ -161,9 +169,19 @@ export default function Register() {
 
         {/* Error Alert */}
         {errorMessage && (
-          <div className="mb-6 p-4 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-xs text-red-600 dark:text-red-400 flex items-start gap-2.5">
-            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-            <span>{errorMessage}</span>
+          <div className="mb-6 p-4 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-xs text-red-600 dark:text-red-400 flex flex-col gap-2">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>{errorMessage}</span>
+            </div>
+            {(errorMessage.toLowerCase().includes("already registered") || errorMessage.toLowerCase().includes("email") || errorMessage.toLowerCase().includes("mobile")) && (
+              <div className="mt-1 pt-2 border-t border-red-200 dark:border-red-800/50 flex items-center justify-between">
+                <span className="font-semibold text-[11px]">Existing user? Log in with your password:</span>
+                <Link href="/login" className="px-3 py-1 bg-red-600 text-white font-bold rounded-lg text-xs hover:bg-red-700 transition">
+                  Go to Log In
+                </Link>
+              </div>
+            )}
           </div>
         )}
 

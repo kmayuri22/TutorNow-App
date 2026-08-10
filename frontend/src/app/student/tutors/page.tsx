@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import api from "@/services/api";
 import {
   Search, Filter, Star, Clock, MapPin, Video, CheckCircle2,
-  Calendar, IndianRupee, Loader2, Award, User, ShieldCheck, X, Sparkles
+  Calendar, IndianRupee, Loader2, Award, User, ShieldCheck, X, Sparkles, AlertCircle
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -78,7 +78,16 @@ export default function FindTutors() {
         (t.location_city && t.location_city.toLowerCase().includes(searchQuery.toLowerCase()));
 
       const matchSubject = !selectedSubject || t.subject.toLowerCase().includes(selectedSubject.toLowerCase());
-      const matchMode = !selectedMode || t.teaching_mode === selectedMode || t.teaching_mode === "Both";
+      
+      // Tutor Visibility Logic:
+      // - In-Person (Offline): Show tutor ONLY when actively logged in (is_online === true)
+      // - Video Call (Online): Scheduled in advance, tutor visible even if not logged in (is_online === false)
+      const matchMode =
+        !selectedMode ||
+        (selectedMode === "Offline"
+          ? (t.teaching_mode === "Offline" || t.teaching_mode === "Both") && t.is_online
+          : (t.teaching_mode === "Online" || t.teaching_mode === "Both"));
+
       const matchPrice = t.hourly_rate <= maxPrice;
 
       return matchSearch && matchSubject && matchMode && matchPrice;
@@ -258,7 +267,7 @@ export default function FindTutors() {
                   </div>
                 </div>
 
-                {/* Subject & Teaching Mode Pills */}
+                {/* Subject, Teaching Mode & Online Status Pills */}
                 <div className="flex flex-wrap gap-2 text-[11px]">
                   <span className="px-2.5 py-1 rounded-xl bg-primary-50 dark:bg-primary-950/40 text-primary-700 dark:text-primary-300 font-bold">
                     {tutor.subject}
@@ -267,6 +276,16 @@ export default function FindTutors() {
                     {tutor.teaching_mode === "Offline" ? <MapPin className="h-3 w-3 text-sky-600" /> : <Video className="h-3 w-3 text-indigo-600" />}
                     {tutor.teaching_mode || "Online"}
                   </span>
+                  {tutor.is_online ? (
+                    <span className="px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-bold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      Online Now
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-medium">
+                      📅 Scheduled Video Session
+                    </span>
+                  )}
                   {tutor.location_city && (
                     <span className="px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-medium">
                       📍 {tutor.location_city}
@@ -340,6 +359,14 @@ export default function FindTutors() {
                   In-Person (Offline)
                 </button>
               </div>
+
+              {/* In-Person offline notice */}
+              {sessionType === "IN_PERSON" && !bookingTutor.is_online && (
+                <div className="mt-1 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                  <span>In-Person sessions require the tutor to be actively logged in. This tutor is currently offline. Please choose <strong>Video Call Session</strong> for scheduled advance booking.</span>
+                </div>
+              )}
             </div>
 
             {/* Session Date & Time */}

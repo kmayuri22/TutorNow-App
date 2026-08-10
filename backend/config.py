@@ -16,12 +16,16 @@ class Settings:
     # Database
     # Support postgresql:// or sqlite:///
     DATABASE_URL: str = os.getenv(
-        "DATABASE_URL", 
+        "DATABASE_URL",
         "sqlite:///./tutornow.db"
     )
 
-    # Convert "postgres://" to "postgresql://" if needed (for Heroku/Render)
+    # Convert "postgres://" to "postgresql://" if needed (for Heroku/Render/Supabase)
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+    # Supabase credentials (for Storage, Auth or direct SDK usage)
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+    SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
 
 settings = Settings()
