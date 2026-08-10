@@ -58,7 +58,7 @@ export default function Login() {
         router.push("/");
       }
     } catch (error: any) {
-      console.error(error);
+      console.warn("Login response details:", error.response?.data?.detail || error.message);
       const detail = error.response?.data?.detail;
 
       if (detail === "PENDING_APPROVAL") {

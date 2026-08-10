@@ -136,9 +136,22 @@ async def update_location(
     )
     db.add(event)
 
-    # Update booking tracking_status if changed
-    if location.status and booking.tracking_status != location.status:
-        booking.tracking_status = location.status
+    STATUS_RANK = {
+        "Accepted": 0,
+        "Booking Accepted": 0,
+        "Journey Started": 1,
+        "Tutor Nearby": 2,
+        "Tutor Arrived": 3,
+        "Session Started": 4,
+        "Session Completed": 5,
+    }
+
+    # Update booking tracking_status if changed and rank is greater than or equal to current rank
+    if location.status:
+        current_rank = STATUS_RANK.get(booking.tracking_status or "Accepted", 0)
+        new_rank = STATUS_RANK.get(location.status, 0)
+        if new_rank >= current_rank:
+            booking.tracking_status = location.status
     db.commit()
     db.refresh(event)
 

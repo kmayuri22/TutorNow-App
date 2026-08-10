@@ -125,7 +125,7 @@ export default function Register() {
         router.push("/login");
       }, 3000);
     } catch (error: any) {
-      console.error(error);
+      console.warn("Registration response details:", error.response?.data?.detail || error.message);
       const detail = error.response?.data?.detail || "Registration failed. Email or Mobile may already be registered.";
       setErrorMessage(detail);
     } finally {

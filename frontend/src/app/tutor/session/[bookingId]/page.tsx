@@ -72,16 +72,21 @@ export default function TutorSessionPage() {
   // Live coordinates tracking for tutor updates
   const [liveLat, setLiveLat] = useState<number | null>(null);
   const [liveLng, setLiveLng] = useState<number | null>(null);
-  const [trackingStatus, setTrackingStatus] = useState<string>("Accepted");
+  const trackingStatusRef = useRef<string>("Accepted");
 
-  const socketRef = useRef<WebSocket | null>(null);
+  // Keep trackingStatusRef synchronized with state
+  useEffect(() => {
+    trackingStatusRef.current = trackingStatus;
+  }, [trackingStatus]);
 
   // Fetch initial details
   const fetchDetails = async () => {
     try {
       const res = await api.get(`/api/bookings/${bookingId}`);
       setBooking(res.data);
-      setTrackingStatus(res.data.tracking_status || "Accepted");
+      const currentStatus = res.data.tracking_status || "Accepted";
+      setTrackingStatus(currentStatus);
+      trackingStatusRef.current = currentStatus;
 
       if (res.data.session_type === "VIDEO_CALL") {
         try {
@@ -122,7 +127,7 @@ export default function TutorSessionPage() {
           api.post(`/api/tracking/${bookingId}/update-location`, {
             latitude: lat,
             longitude: lng,
-            status: trackingStatus || "Booking Accepted",
+            status: trackingStatusRef.current || "Accepted",
           }).catch(() => {});
         },
         (err) => console.warn("GPS auto-push failed:", err),
@@ -153,7 +158,10 @@ export default function TutorSessionPage() {
         if (data.type === "tracking_update" && Number(data.booking_id) === Number(bookingId)) {
           if (data.latitude) setLiveLat(data.latitude);
           if (data.longitude) setLiveLng(data.longitude);
-          if (data.status) setTrackingStatus(data.status);
+          if (data.status) {
+            setTrackingStatus(data.status);
+            trackingStatusRef.current = data.status;
+          }
           
           if (data.status === "Session Completed") {
             fetchDetails();
@@ -213,7 +221,7 @@ export default function TutorSessionPage() {
         setLiveLat(lat);
         setLiveLng(lng);
         // Push live coordinates to backend immediately and every ~5s
-        pushLocation(lat, lng, trackingStatus || "Booking Accepted");
+        pushLocation(lat, lng, trackingStatusRef.current || "Accepted");
       },
       (err) => console.warn("Watch position error:", err),
       {
@@ -227,7 +235,7 @@ export default function TutorSessionPage() {
       navigator.geolocation.clearWatch(watchId);
     };
 
-  }, [bookingId, booking, trackingStatus]);
+  }, [bookingId, booking]);
 
   // Interactive map tap handler (works on any mobile browser / HTTP IP)
   const handleMapClick = async (lat: number, lng: number) => {
@@ -237,7 +245,7 @@ export default function TutorSessionPage() {
       await api.post(`/api/tracking/${bookingId}/update-location`, {
         latitude: lat,
         longitude: lng,
-        status: trackingStatus || "Journey Started",
+        status: trackingStatusRef.current || "Journey Started",
       });
     } catch (e) {
       console.warn("Location update push error:", e);
@@ -254,14 +262,23 @@ export default function TutorSessionPage() {
 
     setLiveLat(targetLat);
     setLiveLng(targetLng);
+
     try {
-      await api.post(`/api/tracking/${bookingId}/update-location`, {
-        latitude: targetLat,
-        longitude: targetLng,
-        status: distanceKm === 0 ? "Tutor Arrived" : distanceKm <= 0.5 ? "Tutor Nearby" : "Journey Started",
-      });
-      if (distanceKm === 0) setTrackingStatus("Tutor Arrived");
-      else if (distanceKm <= 0.5) setTrackingStatus("Tutor Nearby");
+      if (distanceKm === 0) {
+        setTrackingStatus("Tutor Arrived");
+        trackingStatusRef.current = "Tutor Arrived";
+        await api.post(`/api/tracking/${bookingId}/mark-arrived`);
+      } else {
+        const nextStatus = distanceKm <= 0.5 ? "Tutor Nearby" : "Journey Started";
+        setTrackingStatus(nextStatus);
+        trackingStatusRef.current = nextStatus;
+        await api.post(`/api/tracking/${bookingId}/update-location`, {
+          latitude: targetLat,
+          longitude: targetLng,
+          status: nextStatus,
+        });
+      }
+      await fetchDetails();
     } catch (e) {
       console.warn("Simulated movement update error:", e);
     }
@@ -274,6 +291,9 @@ export default function TutorSessionPage() {
     if (!booking) return;
     setActionLoading(true);
     setError(null);
+
+    setTrackingStatus(newStatus);
+    trackingStatusRef.current = newStatus;
 
     try {
       let lat = liveLat ?? 13.0282; // Use live coordinates if available, fallback Saveetha Engineering College

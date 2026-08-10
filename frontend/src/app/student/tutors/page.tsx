@@ -311,7 +311,13 @@ export default function FindTutors() {
                 <button
                   onClick={() => {
                     setBookingTutor(tutor);
-                    setSessionType(tutor.teaching_mode === "Offline" ? "IN_PERSON" : "VIDEO_CALL");
+                    setSessionType(
+                      tutor.teaching_mode === "Offline"
+                        ? "IN_PERSON"
+                        : tutor.is_online
+                        ? "VIDEO_CALL"
+                        : "VIDEO_CALL"
+                    );
                   }}
                   className="px-5 py-2.5 rounded-2xl bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5"
                 >
@@ -353,11 +359,23 @@ export default function FindTutors() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setSessionType("IN_PERSON")}
-                    className={`py-2.5 rounded-xl text-xs font-bold flex justify-center items-center gap-2 transition ${sessionType === "IN_PERSON" ? "bg-white dark:bg-slate-800 text-sky-600 shadow-sm" : "text-slate-500"}`}
+                    disabled={!bookingTutor.is_online}
+                    onClick={() => {
+                      if (bookingTutor.is_online) {
+                        setSessionType("IN_PERSON");
+                      }
+                    }}
+                    className={`py-2.5 rounded-xl text-xs font-bold flex justify-center items-center gap-2 transition ${
+                      !bookingTutor.is_online
+                        ? "opacity-40 cursor-not-allowed text-slate-400 bg-slate-100 dark:bg-slate-900"
+                        : sessionType === "IN_PERSON"
+                        ? "bg-white dark:bg-slate-800 text-sky-600 shadow-sm"
+                        : "text-slate-500"
+                    }`}
+                    title={!bookingTutor.is_online ? "In-Person mode disabled because tutor is offline" : ""}
                   >
                     <MapPin className="h-4 w-4" />
-                    In-Person (Offline)
+                    {bookingTutor.is_online ? "In-Person (Offline)" : "In-Person (Disabled - Offline)"}
                   </button>
                 </div>
               ) : (
@@ -457,14 +475,16 @@ export default function FindTutors() {
             {/* Submit */}
             <button
               onClick={handleCreateBooking}
-              disabled={bookingLoading}
-              className="w-full py-3 bg-primary-600 hover:bg-primary-700 disabled:bg-primary-400 text-white font-bold text-xs rounded-2xl shadow transition flex justify-center items-center gap-2"
+              disabled={bookingLoading || (sessionType === "IN_PERSON" && !bookingTutor.is_online)}
+              className="w-full py-3 bg-primary-600 hover:bg-primary-700 disabled:bg-slate-300 dark:disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-xs rounded-2xl shadow transition flex justify-center items-center gap-2 disabled:cursor-not-allowed"
             >
               {bookingLoading ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Submitting Request...
                 </>
+              ) : (sessionType === "IN_PERSON" && !bookingTutor.is_online) ? (
+                "In-Person Booking Disabled (Tutor Offline)"
               ) : (
                 `Confirm Booking (₹${bookingTutor.hourly_rate})`
               )}

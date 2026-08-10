@@ -277,6 +277,9 @@ def login(user_credentials: schemas.UserLogin, request: Request, db: Session = D
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"REJECTED:{reason}"
                 )
+            elif tutor_profile.status == "Approved":
+                tutor_profile.is_online = True
+                db.commit()
 
     # Successful login – create token
     access_token = auth.create_access_token(data={"sub": user.email, "role": user.role})
