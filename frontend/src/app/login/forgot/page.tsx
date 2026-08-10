@@ -10,6 +10,8 @@ export default function ForgotPassword() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [code, setCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -20,11 +22,13 @@ export default function ForgotPassword() {
     setLoading(true);
     setError(null);
     setCode(null);
+    setSubmitted(false);
 
     try {
       const response = await api.post("/api/auth/forgot-password", { email });
-      // In this sandbox, we display the generated mock code on screen for easier testing.
-      setCode(response.data.temp_code);
+      setEmailSent(!!response.data.email_sent);
+      setCode(response.data.temp_code || null);
+      setSubmitted(true);
     } catch (err: any) {
       console.error(err);
       setError(err.response?.data?.detail || "Email address not registered on this system.");
@@ -41,7 +45,7 @@ export default function ForgotPassword() {
         <div className="text-center mb-8 flex flex-col gap-2">
           <HelpCircle className="h-10 w-10 text-primary-500 mx-auto" />
           <h1 className="text-2xl font-extrabold mt-2">Forgot Password</h1>
-          <p className="text-xs text-slate-500">Submit your email to retrieve a password recovery code.</p>
+          <p className="text-xs text-slate-500">Submit your registered email to receive an OTP code.</p>
         </div>
 
         {error && (
@@ -51,29 +55,50 @@ export default function ForgotPassword() {
           </div>
         )}
 
-        {code ? (
-          <div className="mb-6 p-5 rounded-2xl bg-green-50/50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 text-left flex flex-col gap-3">
-            <span className="text-xs font-bold text-green-700 dark:text-green-400 flex items-center gap-1.5">
-              <CheckCircle className="h-4 w-4" />
-              Mock Code Generated Successfully!
-            </span>
-            <div className="p-3 bg-white dark:bg-slate-950 border rounded-xl text-center">
-              <span className="text-xl font-mono font-bold tracking-widest text-slate-800 dark:text-slate-200">
-                {code}
+        {submitted ? (
+          emailSent ? (
+            <div className="mb-6 p-5 rounded-2xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 text-left flex flex-col gap-3">
+              <span className="text-xs font-bold text-blue-700 dark:text-blue-400 flex items-center gap-1.5">
+                <CheckCircle className="h-4 w-4 text-blue-600" />
+                OTP Code Sent to Email!
               </span>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                A 6-digit recovery OTP code has been dispatched to <strong>{email}</strong>. Please check your inbox (and spam folder).
+              </p>
+              <Link 
+                href={`/login/reset?email=${encodeURIComponent(email)}`}
+                className="mt-2 w-full py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold text-center flex justify-center items-center gap-1.5 shadow-sm"
+              >
+                Proceed to Enter OTP & Reset Password
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
             </div>
-            <p className="text-[10px] text-green-600 dark:text-green-500 leading-relaxed">
-              We simulated an email dispatch. Please copy the 6-digit recovery code above and proceed to the reset form.
-            </p>
-            <Link 
-              href={`/login/reset?email=${encodeURIComponent(email)}&code=${code}`}
-              className="mt-2 w-full py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-bold text-center flex justify-center items-center gap-1.5 shadow-sm"
-            >
-              Proceed to Password Reset
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </div>
+          ) : (
+            <div className="mb-6 p-5 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 text-left flex flex-col gap-3">
+              <span className="text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                <AlertCircle className="h-4 w-4 text-amber-600" />
+                SMTP Email Not Configured on Render
+              </span>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                Real email delivery requires <strong>SMTP_USER</strong> and <strong>SMTP_PASSWORD</strong> to be set in Render environment settings.
+              </p>
+              <div className="p-3 bg-white dark:bg-slate-950 border rounded-xl text-center">
+                <span className="text-xs text-slate-400 block mb-1">Generated Fallback OTP Code:</span>
+                <span className="text-xl font-mono font-bold tracking-widest text-slate-800 dark:text-slate-200">
+                  {code}
+                </span>
+              </div>
+              <Link 
+                href={`/login/reset?email=${encodeURIComponent(email)}&code=${code}`}
+                className="mt-2 w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold text-center flex justify-center items-center gap-1.5 shadow-sm"
+              >
+                Proceed to Reset Password
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          )
         ) : (
+
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-slate-400 uppercase">Registered Email</label>
