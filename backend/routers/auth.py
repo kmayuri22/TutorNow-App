@@ -362,7 +362,6 @@ def logout(
 @router.post("/forgot-password")
 def forgot_password(
     request: schemas.ForgotPasswordRequest, 
-    background_tasks: BackgroundTasks, 
     db: Session = Depends(get_db)
 ):
     clean_email = request.email.lower().strip()
@@ -374,19 +373,11 @@ def forgot_password(
     code = ''.join(secrets.choice(string.digits) for _ in range(6))
     reset_codes[clean_email] = code
 
-    # Send email in background if SMTP credentials are configured
-    email_sent = False
-    if settings.SMTP_USER and settings.SMTP_PASSWORD:
-        background_tasks.add_task(send_email_otp, clean_email, code)
-        email_sent = True
-    else:
-        print(f"[FORGOT PASSWORD] Generated OTP {code} for {clean_email} (SMTP credentials not set)")
-
     return {
-        "message": "Password reset OTP sent to your email address." if email_sent else "Password reset code generated.",
-        "email_sent": email_sent,
+        "message": "Password recovery code generated successfully.",
         "temp_code": code
     }
+
 
 
 
