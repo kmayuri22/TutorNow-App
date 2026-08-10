@@ -2,7 +2,10 @@ import datetime
 import random
 import string
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -10,11 +13,47 @@ from database import get_db
 import models
 import schemas
 import auth
+from config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
-# In-memory dictionary for mock password reset codes: {email: temp_code}
+# In-memory dictionary for password reset codes: {email: temp_code}
 reset_codes = {}
+
+
+def send_email_otp(to_email: str, code: str) -> bool:
+    if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
+        print(f"[EMAIL SIMULATION] SMTP_USER / SMTP_PASSWORD not configured. OTP for {to_email}: {code}")
+        return False
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"TutorNow - Your Password Reset Code: {code}"
+        msg["From"] = settings.SMTP_FROM
+        msg["To"] = to_email
+
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; padding: 24px; max-width: 500px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+            <h2 style="color: #4f46e5; margin-top: 0;">TutorNow Password Reset</h2>
+            <p style="color: #334155; font-size: 14px;">You requested to reset your password. Use the 6-digit OTP code below to complete your password reset:</p>
+            <div style="background-color: #f1f5f9; padding: 18px; text-align: center; border-radius: 12px; font-size: 28px; font-weight: bold; letter-spacing: 6px; color: #0f172a; margin: 20px 0;">
+                {code}
+            </div>
+            <p style="font-size: 12px; color: #64748b; margin-top: 24px;">If you did not request a password reset, please ignore this email.</p>
+        </div>
+        """
+        msg.attach(MIMEText(html_content, "html"))
+
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
+            server.starttls()
+            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.send_message(msg)
+
+        print(f"[EMAIL SUCCESS] Sent OTP code {code} to {to_email}")
+        return True
+    except Exception as e:
+        print(f"[EMAIL ERROR] Could not send email to {to_email}: {e}")
+        return False
+
 
 
 def _record_login(
@@ -321,7 +360,11 @@ def logout(
 
 
 @router.post("/forgot-password")
-def forgot_password(request: schemas.ForgotPasswordRequest, db: Session = Depends(get_db)):
+def forgot_password(
+    request: schemas.ForgotPasswordRequest, 
+    background_tasks: BackgroundTasks, 
+    db: Session = Depends(get_db)
+):
     clean_email = request.email.lower().strip()
     user = db.query(models.User).filter(func.lower(models.User.email) == clean_email).first()
     if not user:
@@ -331,10 +374,20 @@ def forgot_password(request: schemas.ForgotPasswordRequest, db: Session = Depend
     code = ''.join(secrets.choice(string.digits) for _ in range(6))
     reset_codes[clean_email] = code
 
+    # Send email in background if SMTP credentials are configured
+    email_sent = False
+    if settings.SMTP_USER and settings.SMTP_PASSWORD:
+        background_tasks.add_task(send_email_otp, clean_email, code)
+        email_sent = True
+    else:
+        print(f"[FORGOT PASSWORD] Generated OTP {code} for {clean_email} (SMTP credentials not set)")
+
     return {
-        "message": "Password reset code sent successfully.",
-        "temp_code": code  # For demo/evaluation: return the code directly
+        "message": "Password reset OTP sent to your email address." if email_sent else "Password reset code generated.",
+        "email_sent": email_sent,
+        "temp_code": code
     }
+
 
 
 @router.post("/reset-password")
