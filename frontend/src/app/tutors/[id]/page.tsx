@@ -428,32 +428,37 @@ export default function TutorProfileDetails() {
                 <div className="flex flex-col gap-3 border-t dark:border-slate-850 pt-4">
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Session Delivery Mode</span>
                   <div className="flex flex-col gap-3">
-                    <SessionTypeCard
-                      type="VIDEO_CALL"
-                      selected={sessionType === "VIDEO_CALL"}
-                      onClick={() => setSessionType("VIDEO_CALL")}
-                    />
-                    <SessionTypeCard
-                      type="IN_PERSON"
-                      selected={sessionType === "IN_PERSON"}
-                      onClick={() => setSessionType("IN_PERSON")}
-                      locationDetails={{
-                        detecting: detectingLocation,
-                        detected: locationDetected,
-                        address: studentAddress,
-                        error: locationError
-                      }}
-                      onDetectLocation={handleDetectLocation}
-                      onAddressChange={(addr) => {
-                        setStudentAddress(addr);
-                        if(addr.trim()) {
-                          setLocationDetected(true);
-                        }
-                      }}
-                    />
+                    {tutor.teaching_mode !== "Offline" && (
+                      <SessionTypeCard
+                        type="VIDEO_CALL"
+                        selected={sessionType === "VIDEO_CALL"}
+                        onClick={() => setSessionType("VIDEO_CALL")}
+                      />
+                    )}
+                    {tutor.teaching_mode !== "Online" && (
+                      <SessionTypeCard
+                        type="IN_PERSON"
+                        selected={sessionType === "IN_PERSON"}
+                        onClick={() => setSessionType("IN_PERSON")}
+                        locationDetails={{
+                          detecting: detectingLocation,
+                          detected: locationDetected,
+                          address: studentAddress,
+                          error: locationError
+                        }}
+                        onDetectLocation={handleDetectLocation}
+                        onAddressChange={(addr) => {
+                          setStudentAddress(addr);
+                          if(addr.trim()) {
+                            setLocationDetected(true);
+                          }
+                        }}
+                      />
+                    )}
                   </div>
                 </div>
               )}
+
 
               <button
                 onClick={handleBookSlotClick}

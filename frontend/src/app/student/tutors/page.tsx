@@ -341,33 +341,60 @@ export default function FindTutors() {
             {/* Session Type Switcher */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-slate-400 uppercase">Select Session Mode</label>
-              <div className="grid grid-cols-2 gap-3 p-1 bg-slate-100 dark:bg-slate-950 rounded-2xl">
-                <button
-                  type="button"
-                  onClick={() => setSessionType("VIDEO_CALL")}
-                  className={`py-2.5 rounded-xl text-xs font-bold flex justify-center items-center gap-2 transition ${sessionType === "VIDEO_CALL" ? "bg-white dark:bg-slate-800 text-indigo-600 shadow-sm" : "text-slate-500"}`}
-                >
-                  <Video className="h-4 w-4" />
-                  Video Call Session
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSessionType("IN_PERSON")}
-                  className={`py-2.5 rounded-xl text-xs font-bold flex justify-center items-center gap-2 transition ${sessionType === "IN_PERSON" ? "bg-white dark:bg-slate-800 text-sky-600 shadow-sm" : "text-slate-500"}`}
-                >
-                  <MapPin className="h-4 w-4" />
-                  In-Person (Offline)
-                </button>
-              </div>
+              {bookingTutor.teaching_mode === "Both" ? (
+                <div className="grid grid-cols-2 gap-3 p-1 bg-slate-100 dark:bg-slate-950 rounded-2xl">
+                  <button
+                    type="button"
+                    onClick={() => setSessionType("VIDEO_CALL")}
+                    className={`py-2.5 rounded-xl text-xs font-bold flex justify-center items-center gap-2 transition ${sessionType === "VIDEO_CALL" ? "bg-white dark:bg-slate-800 text-indigo-600 shadow-sm" : "text-slate-500"}`}
+                  >
+                    <Video className="h-4 w-4" />
+                    Video Call Session
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSessionType("IN_PERSON")}
+                    className={`py-2.5 rounded-xl text-xs font-bold flex justify-center items-center gap-2 transition ${sessionType === "IN_PERSON" ? "bg-white dark:bg-slate-800 text-sky-600 shadow-sm" : "text-slate-500"}`}
+                  >
+                    <MapPin className="h-4 w-4" />
+                    In-Person (Offline)
+                  </button>
+                </div>
+              ) : (
+                <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center gap-3">
+                  {bookingTutor.teaching_mode === "Offline" ? (
+                    <>
+                      <div className="p-2 rounded-xl bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400">
+                        <MapPin className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">In-Person (Offline) Session</span>
+                        <span className="text-[10px] text-slate-400">This tutor offers In-Person Offline sessions only</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400">
+                        <Video className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">Online Video Call Session</span>
+                        <span className="text-[10px] text-slate-400">This tutor offers Online Video Call sessions only</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
 
               {/* In-Person offline notice */}
               {sessionType === "IN_PERSON" && !bookingTutor.is_online && (
                 <div className="mt-1 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
                   <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                  <span>In-Person sessions require the tutor to be actively logged in. This tutor is currently offline. Please choose <strong>Video Call Session</strong> for scheduled advance booking.</span>
+                  <span>In-Person sessions require the tutor to be actively logged in. This tutor is currently offline.</span>
                 </div>
               )}
             </div>
+
 
             {/* Session Date & Time */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
