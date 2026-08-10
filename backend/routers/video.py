@@ -64,7 +64,7 @@ async def create_video_session(
         return existing
 
     # Generate unique Jitsi room name
-    meeting_id = f"tutornow-{booking_id}-{uuid.uuid4().hex[:8]}"
+    meeting_id = f"tutornow-{booking_id}-{uuid.uuid4().hex}"  # Full 32-char UUID — cryptographically unguessable
     meeting_link = f"https://{JITSI_DOMAIN}/{meeting_id}"
 
     session = models.VideoSession(

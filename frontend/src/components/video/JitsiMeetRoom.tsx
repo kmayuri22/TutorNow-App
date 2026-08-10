@@ -81,29 +81,40 @@ export const JitsiMeetRoom: React.FC<JitsiMeetRoomProps> = ({
           // Camera & audio defaults
           startWithAudioMuted: false,
           startWithVideoMuted: false,
-          // Skip pre-join screen for instant join on desktop & mobile
+          // Skip pre-join screen
           prejoinPageEnabled: false,
           prejoinConfig: { enabled: false },
-          // Disable moderator locks & lobby
+          // ── RESTRICT TO TUTOR + STUDENT ONLY ──────────────────────────
+          // Enable lobby so new joiners must be admitted by the moderator
+          lobby: {
+            enabled: true,
+            autoKnock: true,
+            enableChat: false,
+          },
           enableLobbyChat: false,
-          lobby: { autoKnock: false, enableChat: false },
-          // Allow screen share
+          // Maximum 2 participants (tutor + student)
+          conferenceInfo: {
+            alwaysVisible: [],
+            autoHide: []
+          },
+          // Tutor is moderator — can admit/reject from lobby
+          ...(isTutor ? { moderatedRoomServiceUrl: null } : {}),
+          // ──────────────────────────────────────────────────────────────
           desktopSharingChromeExtId: null,
           hideConferenceSubject: false,
           subject: `TutorNow Classroom #${bookingId || roomId.slice(-6)}`,
           disableDeepLinking: true,
           defaultLanguage: "en",
-          // Allow guest entry without account login
           enableUserRolesBasedOnToken: false,
         },
         interfaceConfigOverwrite: {
           TOOLBAR_BUTTONS: [
             "microphone",
             "camera",
-            "desktop",         // Screen Share
-            "chat",            // In-call Chat
-            "hangup",          // End Call
-            "tileview",        // Grid view
+            "desktop",
+            "chat",
+            "hangup",
+            "tileview",
             "raisehand",
             "participants-pane",
             "fullscreen",
@@ -128,6 +139,13 @@ export const JitsiMeetRoom: React.FC<JitsiMeetRoomProps> = ({
         setConnected(true);
         setLoading(false);
         setError(null);
+
+        // If Tutor: grant moderator status automatically
+        if (isTutor) {
+          try {
+            api.executeCommand("toggleLobby", true);
+          } catch (_) {}
+        }
       });
 
       api.addEventListener("videoConferenceLeft", () => {
@@ -136,8 +154,17 @@ export const JitsiMeetRoom: React.FC<JitsiMeetRoomProps> = ({
         if (onCallEnd) onCallEnd();
       });
 
-      api.addEventListener("participantJoined", () => {
-        setParticipantCount((c) => c + 1);
+      api.addEventListener("participantJoined", (event: any) => {
+        setParticipantCount((c) => {
+          const newCount = c + 1;
+          // If 3rd+ participant joins, kick them (only tutor + student allowed)
+          if (newCount > 1 && isTutor && event?.id) {
+            try {
+              api.executeCommand("kickParticipant", event.id);
+            } catch (_) {}
+          }
+          return newCount;
+        });
       });
 
       api.addEventListener("participantLeft", () => {
@@ -156,6 +183,7 @@ export const JitsiMeetRoom: React.FC<JitsiMeetRoomProps> = ({
       setUseIframe(true);
     }
   }, [roomId, userName, userRole, bookingId, onCallEnd]);
+
 
   useEffect(() => {
     const loadJitsiScript = () =>

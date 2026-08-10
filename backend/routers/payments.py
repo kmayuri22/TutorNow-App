@@ -60,7 +60,7 @@ async def create_payment(
         ).first()
 
         if not existing_session:
-            meeting_id = f"tutornow-{booking.id}-{uuid.uuid4().hex[:8]}"
+            meeting_id = f"tutornow-{booking.id}-{uuid.uuid4().hex}"  # Full 32-char UUID
             meeting_link = f"https://{JITSI_DOMAIN}/{meeting_id}"
 
             video_session = models.VideoSession(
