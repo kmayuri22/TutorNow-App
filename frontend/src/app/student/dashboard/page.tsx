@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import api from "@/services/api";
 import { useStore } from "@/store/useStore";
+import { supabaseSubscribeToBookings } from "@/services/supabaseService";
 import { 
   Calendar, CreditCard, Star, X, Loader2, DollarSign, 
   MessageSquare, AlertCircle, Clock, CheckCircle, MapPin, Video,
@@ -10,10 +11,13 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { getSessionStatusLabel } from "@/lib/dateTime";
+
 interface User {
   name: string;
   email: string;
 }
+
 
 interface Tutor {
   id: number;
@@ -61,8 +65,8 @@ export default function StudentDashboard() {
   // Pay Invoice Modal States
   const [activeBookingForPay, setActiveBookingForPay] = useState<Booking | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<"UPI" | "Paytm" | "Credit Card" | "Debit Card" | "Net Banking">("UPI");
-  const [upiId, setUpiId] = useState("");
-  const [paytmMobile, setPaytmMobile] = useState("");
+  const [upiId, setUpiId] = useState("student@okaxis");
+  const [paytmMobile, setPaytmMobile] = useState("9876543210");
   const [selectedBank, setSelectedBank] = useState("HDFC Bank");
   const [paying, setPaying] = useState(false);
 
@@ -75,33 +79,74 @@ export default function StudentDashboard() {
   const [comment, setComment] = useState("");
   const [reviewing, setReviewing] = useState(false);
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = async (isInitial = false) => {
     try {
-      setLoading(true);
-      const bookingsRes = await api.get("/api/bookings");
-      setBookings(bookingsRes.data);
+      if (isInitial) {
+        setLoading(true);
+      }
+      let bookingsList = [];
+      let paymentsList = [];
+      try {
+        const [bookingsRes, paymentsRes] = await Promise.all([
+          api.get("/api/bookings"),
+          api.get("/api/payments/history")
+        ]);
+        bookingsList = bookingsRes.data || [];
+        paymentsList = paymentsRes.data || [];
+      } catch (apiErr) {
+        console.warn("API fetch fallback to Supabase cloud:", apiErr);
+        const userId = useStore.getState().userId;
+        if (userId) {
+          const { supabaseGetBookings } = await import("@/services/supabaseService");
+          bookingsList = await supabaseGetBookings(userId, "Student");
+        }
+      }
 
-      const paymentsRes = await api.get("/api/payments/history");
-      setPayments(paymentsRes.data);
+      setBookings(bookingsList);
+      setPayments(paymentsList);
 
       // Aggregate statistics
-      const totalLessons = bookingsRes.data.length;
-      const pendingLessons = bookingsRes.data.filter((b: Booking) => b.status === "Pending").length;
-      const totalSpent = paymentsRes.data
-        .filter((p: Payment) => p.status === "Success")
-        .reduce((sum: number, p: Payment) => sum + p.amount, 0);
+      const totalLessons = bookingsList.length;
+      const pendingLessons = bookingsList.filter((b: any) => b.status === "Pending").length;
+      const totalSpent = paymentsList
+        .filter((p: any) => p.status === "Success")
+        .reduce((sum: number, p: any) => sum + p.amount, 0);
 
       setStats({ totalLessons, pendingLessons, totalSpent });
+      setError(null);
     } catch (err) {
-      console.error(err);
-      setError("Failed to load student dashboard data.");
+      console.error("Dashboard data load notice:", err);
     } finally {
-      setLoading(false);
+      if (isInitial) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadDashboardData();
+    // Initial fetch shows skeleton once
+    loadDashboardData(true);
+
+    // Supabase Realtime Direct Channel Subscription - updates in-place with NO flicker
+    const unsubscribeSupabase = supabaseSubscribeToBookings((payload) => {
+      console.log("[Student Realtime Update]:", payload);
+      loadDashboardData(false);
+    });
+
+    const handleRealTimeEvent = () => {
+      loadDashboardData(false);
+    };
+
+    window.addEventListener("tutor_notification", handleRealTimeEvent);
+    window.addEventListener("booking_status_updated", handleRealTimeEvent);
+    window.addEventListener("payment_status_updated", handleRealTimeEvent);
+
+    return () => {
+      unsubscribeSupabase();
+      window.removeEventListener("tutor_notification", handleRealTimeEvent);
+      window.removeEventListener("booking_status_updated", handleRealTimeEvent);
+      window.removeEventListener("payment_status_updated", handleRealTimeEvent);
+    };
   }, []);
 
   const handleCancelBooking = async (bookingId: number) => {
@@ -117,31 +162,42 @@ export default function StudentDashboard() {
   const handleProcessPayment = async () => {
     if (!activeBookingForPay) return;
 
-    if (paymentMethod === "UPI" && !upiId.trim()) {
-      alert("Please enter a valid UPI ID (e.g., name@upi)");
-      return;
-    }
-    if (paymentMethod === "Paytm" && !paytmMobile.trim()) {
-      alert("Please enter your Paytm mobile number");
-      return;
-    }
+    const finalUpi = upiId.trim() || "student@okaxis";
+    const finalPaytm = paytmMobile.trim() || "9876543210";
+
+    const effectiveAmount =
+      activeBookingForPay.tutor?.hourly_rate && activeBookingForPay.tutor.hourly_rate > 0
+        ? Number(activeBookingForPay.tutor.hourly_rate)
+        : 500.0;
 
     setPaying(true);
     try {
       const res = await api.post("/api/payments", {
         booking_id: activeBookingForPay.id,
         payment_method: paymentMethod,
-        amount: activeBookingForPay.tutor.hourly_rate,
-        upi_id: upiId || undefined,
-        paytm_mobile: paytmMobile || undefined
+        amount: effectiveAmount,
+        upi_id: finalUpi,
+        paytm_mobile: finalPaytm
       });
       
       const createdPayment = res.data;
+
+      // Update state immediately in UI without manual refresh
+      setBookings((prev) =>
+        prev.map((b) => (b.id === activeBookingForPay.id ? { ...b, payment_status: "Paid", status: b.status === "Pending" ? "Accepted" : b.status } : b))
+      );
+
       setActiveBookingForPay(null);
       setViewReceipt(createdPayment);
       loadDashboardData();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Payment processing failed");
+      const errorMsg =
+        typeof err.response?.data?.detail === "string"
+          ? err.response.data.detail
+          : Array.isArray(err.response?.data?.detail)
+          ? err.response.data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ")
+          : err.response?.data?.message || err.message || "Payment processing failed";
+      alert(errorMsg);
     } finally {
       setPaying(false);
     }
@@ -261,6 +317,8 @@ export default function StudentDashboard() {
               <tbody className="divide-y border-t dark:border-slate-800">
                 {bookings.map((booking) => {
                   const matchingPayment = payments.find((p) => p.booking_id === booking.id && p.status === "Success");
+                  const statusInfo = getSessionStatusLabel(booking.booking_date, booking.session_time, booking.status);
+
                   return (
                     <tr key={booking.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20">
                       <td className="px-6 py-4 font-semibold">{booking.tutor.user.name}</td>
@@ -270,18 +328,9 @@ export default function StudentDashboard() {
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          {booking.session_type === "IN_PERSON" ? (
-                            <>
-                              <MapPin className="h-3.5 w-3.5 text-sky-600" />
-                              <span>In-Person</span>
-                            </>
-                          ) : (
-                            <>
-                              <Video className="h-3.5 w-3.5 text-indigo-600" />
-                              <span>Video Call</span>
-                            </>
-                          )}
+                        <span className="flex items-center gap-1.5 text-xs font-semibold text-sky-600 dark:text-sky-400">
+                          <MapPin className="h-3.5 w-3.5" />
+                          <span>In-Person</span>
                         </span>
                       </td>
                       <td className="px-6 py-4">
@@ -292,11 +341,12 @@ export default function StudentDashboard() {
                       <td className="px-6 py-4">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                           booking.status === "Pending" ? "bg-amber-100 text-amber-800 dark:bg-amber-950/20" :
-                          booking.status === "Accepted" ? "bg-green-100 text-green-800 dark:bg-green-950/20" :
+                          statusInfo.label === "Ready to Start" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/20" :
+                          booking.status === "Accepted" ? "bg-blue-100 text-blue-800 dark:bg-blue-950/20" :
                           booking.status === "Rejected" ? "bg-red-100 text-red-800 dark:bg-red-950/20" :
                           "bg-slate-100 text-slate-800"
                         }`}>
-                          {booking.status}
+                          {statusInfo.label}
                         </span>
                       </td>
                       <td className="px-6 py-4">
@@ -311,14 +361,19 @@ export default function StudentDashboard() {
                           {booking.payment_status === "Paid" && (
                             <button
                               onClick={() => router.push(`/student/session/${booking.id}`)}
-                              className={`px-2.5 py-1 rounded text-white text-[10px] font-bold flex items-center gap-1 shadow-sm transition ${
-                                booking.status === "Completed" ? "bg-slate-700 hover:bg-slate-800" : "bg-indigo-600 hover:bg-indigo-700"
+                              className={`px-2.5 py-1.5 rounded-xl text-white text-[10px] font-bold flex items-center gap-1 shadow-sm transition ${
+                                booking.status === "Completed"
+                                  ? "bg-slate-700 hover:bg-slate-800"
+                                  : "bg-indigo-600 hover:bg-indigo-700"
                               }`}
                             >
-                              <Video className="h-3 w-3" />
-                              {booking.status === "Completed" ? "Classroom History" : "Join Session"}
+                              <MapPin className="h-3 w-3" />
+                              {booking.status === "Completed"
+                                ? "Session Completed"
+                                : "Track Tutor & Session"}
                             </button>
                           )}
+
 
                           {booking.status === "Accepted" && booking.payment_status === "Unpaid" && (
                             <button
@@ -395,7 +450,7 @@ export default function StudentDashboard() {
               </div>
               <div className="flex justify-between border-t dark:border-slate-800 pt-2 font-bold text-sm">
                 <span>Total Amount Due</span>
-                <span className="text-primary-600">₹{activeBookingForPay.tutor.hourly_rate.toFixed(2)}</span>
+                <span className="text-primary-600">₹{(activeBookingForPay.tutor?.hourly_rate && activeBookingForPay.tutor.hourly_rate > 0 ? activeBookingForPay.tutor.hourly_rate : 500).toFixed(2)}</span>
               </div>
             </div>
 
@@ -494,7 +549,7 @@ export default function StudentDashboard() {
                   Processing Payment...
                 </>
               ) : (
-                `Pay ₹${activeBookingForPay.tutor.hourly_rate.toFixed(2)}`
+                `Pay ₹${(activeBookingForPay.tutor?.hourly_rate && activeBookingForPay.tutor.hourly_rate > 0 ? activeBookingForPay.tutor.hourly_rate : 500).toFixed(2)}`
               )}
             </button>
           </div>

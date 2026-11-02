@@ -7,6 +7,8 @@ class ConnectionManager:
         self.active_connections: Dict[int, List[WebSocket]] = {}
         # Maps booking_id → set of WebSockets watching live tracking
         self.tracking_connections: Dict[int, List[WebSocket]] = {}
+        # Maps booking_id → set of WebSockets connected to video classroom signaling
+        self.video_connections: Dict[int, List[WebSocket]] = {}
 
     # ─── User notification connections ───────────────────────────
     async def connect(self, user_id: int, websocket: WebSocket):
@@ -69,5 +71,32 @@ class ConnectionManager:
                     dead.append(connection)
             for d in dead:
                 self.tracking_connections[booking_id].remove(d)
+
+    # ─── Video classroom signaling (WebRTC / Chat / Whiteboard) ────
+    async def connect_video(self, booking_id: int, websocket: WebSocket):
+        await websocket.accept()
+        if booking_id not in self.video_connections:
+            self.video_connections[booking_id] = []
+        self.video_connections[booking_id].append(websocket)
+
+    def disconnect_video(self, booking_id: int, websocket: WebSocket):
+        if booking_id in self.video_connections:
+            if websocket in self.video_connections[booking_id]:
+                self.video_connections[booking_id].remove(websocket)
+            if not self.video_connections[booking_id]:
+                del self.video_connections[booking_id]
+
+    async def broadcast_video(self, booking_id: int, message: dict, sender_socket: WebSocket = None):
+        if booking_id in self.video_connections:
+            dead = []
+            for connection in list(self.video_connections[booking_id]):
+                if connection != sender_socket:
+                    try:
+                        await connection.send_json(message)
+                    except Exception:
+                        dead.append(connection)
+            for d in dead:
+                if d in self.video_connections[booking_id]:
+                    self.video_connections[booking_id].remove(d)
 
 manager = ConnectionManager()

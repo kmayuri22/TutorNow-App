@@ -8,6 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useStore } from "@/store/useStore";
 import api from "@/services/api";
+import { supabaseLogin } from "@/services/supabaseService";
 import { Mail, Lock, LogIn, Loader2, AlertCircle, Clock, XCircle } from "lucide-react";
 
 const loginSchema = z.object({
@@ -41,13 +42,30 @@ export default function Login() {
     setRejectionNotice(null);
 
     try {
-      const response = await api.post("/api/auth/login", { email, password });
-      
-      // Save credentials in Zustand store and localStorage
-      loginUser(response.data);
+      // 1. Primary: Direct Supabase Authentication
+      let authResult;
+      try {
+        authResult = await supabaseLogin(email, password);
+      } catch (sbError: any) {
+        // If Supabase direct login failed, check API endpoint
+        console.warn("Supabase auth attempt message:", sbError?.message);
+        const response = await api.post("/api/auth/login", { email, password });
+        authResult = response.data;
+        loginUser(authResult);
+      }
+
+      // Check tutor status
+      if (authResult.role === "Tutor" && authResult.tutor_status === "Pending") {
+        setPendingNotice(true);
+        return;
+      }
+      if (authResult.role === "Tutor" && authResult.tutor_status === "Rejected") {
+        setRejectionNotice("Application did not meet criteria.");
+        return;
+      }
 
       // Redirect depending on user role
-      const userRole = response.data.role;
+      const userRole = authResult.role;
       if (userRole === "Student") {
         router.push("/student/dashboard");
       } else if (userRole === "Tutor") {

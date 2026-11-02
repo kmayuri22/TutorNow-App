@@ -40,9 +40,19 @@ export const useWebSocket = (userId: number | null) => {
               created_at: data.created_at,
             });
             
-            // Dispatch a custom window event for in-app toast triggers
-            const customEvent = new CustomEvent("tutor_notification", { detail: data });
-            window.dispatchEvent(customEvent);
+            // Dispatch custom window events for in-app toast triggers and dashboard real-time updates
+            window.dispatchEvent(new CustomEvent("tutor_notification", { detail: data }));
+
+            if (data.event_type === "BOOKING_ACCEPTED" || data.event_type === "BOOKING_REJECTED" || data.event_type === "BOOKING_UPDATED") {
+              window.dispatchEvent(new CustomEvent("booking_status_updated", { detail: data }));
+            }
+            if (data.event_type === "PAYMENT_SUCCESS") {
+              window.dispatchEvent(new CustomEvent("payment_status_updated", { detail: data }));
+            }
+          } else if (data.event_type === "BOOKING_ACCEPTED" || data.event_type === "BOOKING_REJECTED") {
+            window.dispatchEvent(new CustomEvent("booking_status_updated", { detail: data }));
+          } else if (data.event_type === "PAYMENT_SUCCESS") {
+            window.dispatchEvent(new CustomEvent("payment_status_updated", { detail: data }));
           }
         } catch (error) {
           console.error("Error parsing WebSocket message:", error);

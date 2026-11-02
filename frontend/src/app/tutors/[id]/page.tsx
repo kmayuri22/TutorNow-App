@@ -8,7 +8,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/store/useStore";
 import api from "@/services/api";
 import { 
-  Star, ShieldCheck, GraduationCap, Clock, DollarSign, 
+  Star, ShieldCheck, GraduationCap, Clock, IndianRupee, 
   Calendar, Check, AlertCircle, ArrowLeft, Loader2, User, CreditCard
 } from "lucide-react";
 import { SessionTypeCard } from "@/components/booking/SessionTypeCard";
@@ -42,6 +42,11 @@ interface TutorDetail {
   rating: number;
   availabilities: Slot[];
   reviews: Review[];
+  teaching_mode?: string;
+  latitude?: number;
+  longitude?: number;
+  location_address?: string;
+  location_city?: string;
   location?: {
     latitude: number;
     longitude: number;
@@ -64,8 +69,8 @@ export default function TutorProfileDetails() {
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(false);
 
-  // Dual booking choices
-  const [sessionType, setSessionType] = useState<"VIDEO_CALL" | "IN_PERSON">("VIDEO_CALL");
+  // In-Person Offline Booking
+  const [sessionType, setSessionType] = useState<"IN_PERSON">("IN_PERSON");
   const [detectingLocation, setDetectingLocation] = useState(false);
   const [locationDetected, setLocationDetected] = useState(false);
   const [studentAddress, setStudentAddress] = useState("");
@@ -99,32 +104,29 @@ export default function TutorProfileDetails() {
     setDetectingLocation(true);
     setLocationError(null);
     if (typeof window === "undefined" || !navigator.geolocation) {
-      setLocationError("Geolocation is not supported by your browser.");
+      setLocationError("Geolocation is not supported by your browser. Please enter your address manually below.");
       setDetectingLocation(false);
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setStudentLat(position.coords.latitude);
-        setStudentLng(position.coords.longitude);
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        setStudentLat(lat);
+        setStudentLng(lng);
         setLocationDetected(true);
         setDetectingLocation(false);
-        setStudentAddress("Saveetha Engineering College, Thandalam, Chennai"); // detected default address label
+        setStudentAddress(`Current Device Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
       },
       (err) => {
         console.error("Geolocation error:", err);
-        setLocationError("Permission denied or location unavailable. Using Saveetha Engineering College venue.");
-        // Set Saveetha Engineering College venue coordinates
-        setStudentLat(13.0282); // Saveetha Engineering College
-        setStudentLng(80.0169);
-        setStudentAddress("Saveetha Engineering College, Thandalam, Chennai");
-        setLocationDetected(true);
+        setLocationError("Location permission denied or unavailable. Please enable device location access or type your address below.");
+        setLocationDetected(false);
         setDetectingLocation(false);
       },
-      { timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 15000 }
     );
-
   };
 
   const handleBookSlotClick = () => {
@@ -138,8 +140,8 @@ export default function TutorProfileDetails() {
     }
     if (!selectedSlot) return;
 
-    if (sessionType === "IN_PERSON" && !locationDetected) {
-      setError("Please detect your geolocation or specify an address for In-Person tutoring.");
+    if (sessionType === "IN_PERSON" && !locationDetected && !studentAddress.trim()) {
+      setError("Please enable GPS location detection or type your address for In-Person tutoring.");
       return;
     }
 
@@ -157,14 +159,15 @@ export default function TutorProfileDetails() {
         tutor_id: tutor.id,
         booking_date: selectedSlot.date,
         session_time: `${selectedSlot.start_time} - ${selectedSlot.end_time}`,
-        session_type: sessionType,
-        student_lat: sessionType === "IN_PERSON" ? studentLat : null,
-        student_lng: sessionType === "IN_PERSON" ? studentLng : null,
-        student_address: sessionType === "IN_PERSON" ? studentAddress : null,
-        tutor_lat: sessionType === "IN_PERSON" ? (tutor.location?.latitude || 13.0282) : null,
-        tutor_lng: sessionType === "IN_PERSON" ? (tutor.location?.longitude || 80.0169) : null,
-        tutor_address: sessionType === "IN_PERSON" ? (tutor.location?.address || "Saveetha Engineering College, Thandalam, Chennai") : null
+        session_type: "IN_PERSON",
+        student_lat: studentLat || 13.0282,
+        student_lng: studentLng || 80.0169,
+        student_address: studentAddress || "Kalakada, Annamayya District, AP",
+        tutor_lat: (tutor.location?.latitude || tutor.latitude || 13.0282),
+        tutor_lng: (tutor.location?.longitude || tutor.longitude || 80.0169),
+        tutor_address: (tutor.location?.address || tutor.location_address || tutor.location_city || "Kalakada, Annamayya District, AP")
       });
+
 
       const bookingId = bookingRes.data.id;
       setCreatedBookingId(bookingId);
@@ -268,7 +271,7 @@ export default function TutorProfileDetails() {
               Booking Request Submitted Successfully!
             </h3>
             <p className="text-xs text-green-600 dark:text-green-500 leading-relaxed">
-              Dr. Sarah Jenkins has been notified. Once she accepts your reservation request, you will receive a notification and can proceed to pay the invoice from your student dashboard booking ledger.
+              {tutor.name || "The tutor"} has been notified. Once accepted, you will receive a notification and can proceed to pay the invoice from your student dashboard.
             </p>
             <button 
               onClick={() => router.push("/student/dashboard")}
@@ -318,7 +321,7 @@ export default function TutorProfileDetails() {
                     <span>{tutor.rating.toFixed(1)} Stars</span>
                   </div>
                   <div className="flex items-center font-extrabold text-lg text-slate-900 dark:text-white">
-                    <DollarSign className="h-5 w-5 text-slate-400" />
+                    <IndianRupee className="h-4 w-4 text-slate-400" />
                     <span>{tutor.hourly_rate}/hr</span>
                   </div>
                 </div>
@@ -376,7 +379,7 @@ export default function TutorProfileDetails() {
                   <Calendar className="h-5 w-5 text-primary-500" />
                   Select Time Slot
                 </h3>
-                <p className="text-xs text-slate-450 mt-1">Select an open slot from Dr. Sarah's availability list below.</p>
+                <p className="text-xs text-slate-450 mt-1">Select an open slot from {tutor.name || "the tutor"}&apos;s availability list below.</p>
               </div>
 
               {tutor.availabilities.length === 0 ? (
@@ -418,43 +421,34 @@ export default function TutorProfileDetails() {
                   </div>
                   <div className="text-right">
                     <span className="text-slate-400 block font-medium">Total Price:</span>
-                    <span className="font-extrabold text-primary-600 dark:text-primary-400 mt-0.5 block">${tutor.hourly_rate}</span>
+                    <span className="font-extrabold text-primary-600 dark:text-primary-400 mt-0.5 block">₹{tutor.hourly_rate}</span>
                   </div>
                 </div>
               )}
 
-              {/* Session Type Pickers */}
+              {/* Session Type Pickers (In-Person Offline Only) */}
               {selectedSlot && (
                 <div className="flex flex-col gap-3 border-t dark:border-slate-850 pt-4">
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Session Delivery Mode</span>
                   <div className="flex flex-col gap-3">
-                    {tutor.teaching_mode !== "Offline" && (
-                      <SessionTypeCard
-                        type="VIDEO_CALL"
-                        selected={sessionType === "VIDEO_CALL"}
-                        onClick={() => setSessionType("VIDEO_CALL")}
-                      />
-                    )}
-                    {tutor.teaching_mode !== "Online" && (
-                      <SessionTypeCard
-                        type="IN_PERSON"
-                        selected={sessionType === "IN_PERSON"}
-                        onClick={() => setSessionType("IN_PERSON")}
-                        locationDetails={{
-                          detecting: detectingLocation,
-                          detected: locationDetected,
-                          address: studentAddress,
-                          error: locationError
-                        }}
-                        onDetectLocation={handleDetectLocation}
-                        onAddressChange={(addr) => {
-                          setStudentAddress(addr);
-                          if(addr.trim()) {
-                            setLocationDetected(true);
-                          }
-                        }}
-                      />
-                    )}
+                    <SessionTypeCard
+                      type="IN_PERSON"
+                      selected={true}
+                      onClick={() => setSessionType("IN_PERSON")}
+                      locationDetails={{
+                        detecting: detectingLocation,
+                        detected: locationDetected,
+                        address: studentAddress,
+                        error: locationError
+                      }}
+                      onDetectLocation={handleDetectLocation}
+                      onAddressChange={(addr) => {
+                        setStudentAddress(addr);
+                        if(addr.trim()) {
+                          setLocationDetected(true);
+                        }
+                      }}
+                    />
                   </div>
                 </div>
               )}
@@ -476,8 +470,8 @@ export default function TutorProfileDetails() {
 
       {/* Confirmation Modal */}
       {showCheckout && selectedSlot && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex justify-center items-center p-4">
-          <div className="max-w-md w-full bg-white dark:bg-slate-900 border dark:border-slate-850 p-6 rounded-2xl flex flex-col gap-5 text-left shadow-2xl animate-fade-in">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex justify-center items-center p-3 sm:p-4 overflow-y-auto">
+          <div className="max-w-md w-full max-h-[90vh] bg-white dark:bg-slate-900 border dark:border-slate-850 p-6 rounded-2xl flex flex-col gap-5 text-left shadow-2xl animate-fade-in my-auto overflow-y-auto">
             <div>
               <h3 className="font-bold text-lg text-slate-900 dark:text-white">Confirm Booking Details</h3>
               <p className="text-xs text-slate-450 mt-1">Review your tutor booking details before submitting the request.</p>
@@ -502,7 +496,7 @@ export default function TutorProfileDetails() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400 font-medium">Session Mode</span>
-                <span className="font-bold text-primary-600 dark:text-primary-400">{sessionType === "IN_PERSON" ? "In-Person Delivery" : "Online Video Session"}</span>
+                <span className="font-bold text-sky-600 dark:text-sky-400">In-Person (Offline)</span>
               </div>
               {sessionType === "IN_PERSON" && (
                 <div className="flex justify-between">
@@ -512,7 +506,7 @@ export default function TutorProfileDetails() {
               )}
               <div className="flex justify-between border-t dark:border-slate-850 pt-3">
                 <span className="font-bold text-slate-900 dark:text-white">Total Fee</span>
-                <span className="font-extrabold text-lg text-primary-600 dark:text-primary-400">${tutor.hourly_rate}</span>
+                <span className="font-extrabold text-lg text-primary-600 dark:text-primary-400">₹{tutor.hourly_rate}</span>
               </div>
             </div>
 

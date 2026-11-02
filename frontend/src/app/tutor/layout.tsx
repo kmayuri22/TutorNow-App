@@ -25,6 +25,38 @@ export default function TutorLayout({ children }: { children: React.ReactNode })
     }
   }, [isAuthenticated, role, router]);
 
+  useEffect(() => {
+    if (!authorized) return;
+
+    const sendHeartbeat = async () => {
+      try {
+        await api.post("/api/tutors/heartbeat");
+      } catch (e) {
+        console.warn("Heartbeat error:", e);
+      }
+    };
+
+    sendHeartbeat();
+    const intervalId = setInterval(sendHeartbeat, 20000);
+
+    const handleBeforeUnload = () => {
+      try {
+        const token = localStorage.getItem("token");
+        if (token) {
+          const baseUrl = process.env.NEXT_PUBLIC_API_URL || window.location.origin;
+          navigator.sendBeacon(`${baseUrl}/api/tutors/offline`);
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [authorized]);
+
+
   if (!authorized) {
     return (
       <div className="min-h-screen flex justify-center items-center bg-slate-50 dark:bg-slate-950">

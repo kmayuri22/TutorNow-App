@@ -8,6 +8,7 @@ import models
 import schemas
 import auth
 from routers.bookings import create_notification
+from supabase_sync import supabase_client
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"], dependencies=[Depends(auth.RoleChecker(["Admin"]))])
 
@@ -235,6 +236,16 @@ async def tutor_approval_action(
 
     db.commit()
     await create_notification(db, tutor.user_id, msg)
+
+    if supabase_client:
+        try:
+            supabase_client.table("tutors").update({
+                "status": tutor.status,
+                "is_verified": tutor.is_verified,
+                "rejection_reason": tutor.rejection_reason
+            }).eq("id", tutor.id).execute()
+        except Exception as sb_err:
+            print("[SUPABASE ADMIN SYNC ERROR]:", sb_err)
 
     return {
         "message": f"Tutor status updated to '{tutor.status}'",

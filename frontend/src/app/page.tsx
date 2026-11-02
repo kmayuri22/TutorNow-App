@@ -87,7 +87,7 @@ export default function Home() {
                 Learn from the <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary-600 to-sky-500 dark:from-primary-400 dark:to-sky-400">Best Minds</span>, On Demand.
               </h1>
               <p className="text-base sm:text-lg text-slate-600 dark:text-slate-300 max-w-xl">
-                TutorNow connects you instantly with Ivy League and top-university graduates for math, programming, sciences, and languages. Schedule a custom session in seconds.
+                TutorNow connects you directly with top academic tutors for in-person home tutoring with live GPS route tracking. Schedule your personalized offline session in seconds.
               </p>
 
               {/* Search Form */}
@@ -126,7 +126,7 @@ export default function Home() {
                         <span className="text-xs text-slate-400 truncate block">{t.subject}</span>
                       </div>
                       <div className="text-right flex flex-col items-end">
-                        <span className="font-bold text-sm text-primary-600 dark:text-primary-400">${t.hourly_rate}/hr</span>
+                        <span className="font-bold text-sm text-primary-600 dark:text-primary-400">₹{t.hourly_rate * 20}/hr</span>
                         <div className="flex items-center gap-0.5 text-xs text-amber-500 font-semibold mt-0.5">
                           <Star className="h-3.5 w-3.5 fill-current" />
                           <span>{t.rating}</span>
@@ -225,9 +225,9 @@ export default function Home() {
               <div className="h-14 w-14 rounded-full bg-primary-100 dark:bg-primary-950/50 text-primary-600 dark:text-primary-400 flex items-center justify-center font-bold text-xl border-2 border-primary-500">
                 3
               </div>
-              <h3 className="font-bold text-lg">Start Learning</h3>
+              <h3 className="font-bold text-lg">In-Person Learning</h3>
               <p className="text-sm text-slate-500 max-w-xs">
-                Log in at class time to join your interactive lesson. Review past sessions and rate your tutor's lesson performance.
+                Track your tutor&apos;s live arrival with GPS route navigation, conduct your focused face-to-face lesson, and mark completion.
               </p>
             </div>
 

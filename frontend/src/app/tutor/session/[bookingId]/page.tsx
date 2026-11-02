@@ -2,16 +2,15 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import { useStore } from "@/store/useStore";
 import api from "@/services/api";
 import { GoogleMap } from "@/components/maps/GoogleMap";
 import { LiveTrackingPanel } from "@/components/maps/LiveTrackingPanel";
-import { VideoSessionPanel } from "@/components/video/VideoSessionPanel";
-import { JitsiMeetRoom } from "@/components/video/JitsiMeetRoom";
-import { ArrowLeft, Loader2, AlertCircle, MapPin, Video, Calendar, Clock, Navigation } from "lucide-react";
+import { formatBookingDate, isClassroomAvailable } from "@/lib/dateTime";
+import { ArrowLeft, Loader2, AlertCircle, MapPin, Calendar, Clock, Navigation } from "lucide-react";
 
 
 interface UserResponse {
@@ -49,14 +48,6 @@ interface Booking {
   student: UserResponse;
 }
 
-interface VideoSession {
-  id: number;
-  booking_id: number;
-  meeting_id: string;
-  meeting_link: string;
-  status: string; // Scheduled | Active | Ended
-}
-
 export default function TutorSessionPage() {
   const params = useParams();
   const router = useRouter();
@@ -64,15 +55,18 @@ export default function TutorSessionPage() {
   const bookingId = params.bookingId;
 
   const [booking, setBooking] = useState<Booking | null>(null);
-  const [videoSession, setVideoSession] = useState<VideoSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Live coordinates tracking for tutor updates
+  // Live coordinates tracking for tutor & student updates
   const [liveLat, setLiveLat] = useState<number | null>(null);
   const [liveLng, setLiveLng] = useState<number | null>(null);
+  const [liveStudentLat, setLiveStudentLat] = useState<number | null>(null);
+  const [liveStudentLng, setLiveStudentLng] = useState<number | null>(null);
+  const [trackingStatus, setTrackingStatus] = useState<string>("Accepted");
   const trackingStatusRef = useRef<string>("Accepted");
+  const socketRef = useRef<WebSocket | null>(null);
 
   // Keep trackingStatusRef synchronized with state
   useEffect(() => {
@@ -87,16 +81,6 @@ export default function TutorSessionPage() {
       const currentStatus = res.data.tracking_status || "Accepted";
       setTrackingStatus(currentStatus);
       trackingStatusRef.current = currentStatus;
-
-      if (res.data.session_type === "VIDEO_CALL") {
-        try {
-          const videoRes = await api.get(`/api/video/${bookingId}`);
-          setVideoSession(videoRes.data);
-        } catch (vErr) {
-          console.log("Video session has not been generated yet.");
-          setVideoSession(null);
-        }
-      }
     } catch (err: any) {
       console.error(err);
       setError("Failed to load booking session details.");
@@ -144,7 +128,7 @@ export default function TutorSessionPage() {
 
   // Set up tracking WebSocket for active tracking room
   useEffect(() => {
-    if (!bookingId || !booking || booking.session_type !== "IN_PERSON") return;
+    if (!bookingId || !booking) return;
 
     const hostname = typeof window !== "undefined" ? window.location.hostname : "localhost";
     const wsProtocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -166,6 +150,9 @@ export default function TutorSessionPage() {
           if (data.status === "Session Completed") {
             fetchDetails();
           }
+        } else if (data.type === "student_tracking_update" && Number(data.booking_id) === Number(bookingId)) {
+          if (data.student_lat) setLiveStudentLat(data.student_lat);
+          if (data.student_lng) setLiveStudentLng(data.student_lng);
         }
       } catch (err) {
         console.error("Error parsing live tracking message:", err);
@@ -196,7 +183,7 @@ export default function TutorSessionPage() {
 
   // Continuous high-accuracy GPS watch — active from page load (not just Journey Started)
   useEffect(() => {
-    if (!bookingId || !booking || booking.session_type !== "IN_PERSON") return;
+    if (!bookingId || !booking) return;
     if (!navigator.geolocation) return;
 
     let lastPushTime = 0;
@@ -343,45 +330,15 @@ export default function TutorSessionPage() {
     }
   };
 
-  // Handlers for Jitsi virtual classroom (Online Video workflow)
-  const handleCreateRoom = async () => {
-    setActionLoading(true);
-    try {
-      await api.post(`/api/video/${bookingId}/create`);
-      await fetchDetails();
-    } catch (err: any) {
-      console.error(err);
-      setError("Failed to generate virtual video room.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
+  // Track real-time clock for scheduled start calculation
+  const [currentTimeMs, setCurrentTimeMs] = useState<number>(Date.now());
 
-  const handleStartVideoSession = async () => {
-    setActionLoading(true);
-    try {
-      await api.post(`/api/video/${bookingId}/start`);
-      await fetchDetails();
-    } catch (err: any) {
-      console.error(err);
-      setError("Failed to start video session.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleEndVideoSession = async () => {
-    setActionLoading(true);
-    try {
-      await api.post(`/api/video/${bookingId}/end`);
-      await fetchDetails();
-    } catch (err: any) {
-      console.error(err);
-      setError("Failed to close video session.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTimeMs(Date.now());
+    }, 10000);
+    return () => clearInterval(timer);
+  }, []);
 
   if (loading) {
     return (
@@ -406,12 +363,8 @@ export default function TutorSessionPage() {
 
   if (!booking) return null;
 
-  const dateFormatted = new Date(booking.booking_date).toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const dateFormatted = formatBookingDate(booking.booking_date);
+  const classAvailability = isClassroomAvailable(booking.booking_date, booking.session_time, currentTimeMs);
 
   return (
     <div className="py-12 bg-slate-50 dark:bg-slate-950 min-h-screen transition-colors duration-200">
@@ -426,6 +379,19 @@ export default function TutorSessionPage() {
           Back to Dashboard
         </button>
 
+        {/* Scheduled Start Notice Banner if class is in the future */}
+        {!classAvailability.isAvailable && (
+          <div className="mb-6 p-4 rounded-2xl bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 text-sky-800 dark:text-sky-300 flex items-start gap-3 text-left">
+            <Clock className="h-6 w-6 shrink-0 mt-0.5 text-sky-500" />
+            <div>
+              <h4 className="font-extrabold text-sm">Upcoming Scheduled Lesson</h4>
+              <p className="text-xs mt-0.5 text-sky-700 dark:text-sky-300 font-medium">
+                {classAvailability.formattedStartMessage} Live navigation and GPS tracking are active below. You can start your journey whenever you are ready.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Global Error Banner */}
         {error && (
           <div className="mb-6 p-4 rounded-xl bg-red-50 dark:bg-red-955/20 border border-red-200 dark:border-red-800 text-xs text-red-650 dark:text-red-400 flex items-start gap-2 text-left">
@@ -437,15 +403,15 @@ export default function TutorSessionPage() {
         {/* Classroom Header */}
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 text-left">
           <div className="flex items-center gap-4">
-            <div className={`p-3.5 rounded-2xl text-white shadow-md ${booking.session_type === "IN_PERSON" ? "bg-sky-600 dark:bg-sky-500" : "bg-indigo-600 dark:bg-indigo-500"}`}>
-              {booking.session_type === "IN_PERSON" ? <MapPin className="h-6 w-6" /> : <Video className="h-6 w-6" />}
+            <div className="p-3.5 rounded-2xl text-white shadow-md bg-sky-600 dark:bg-sky-500">
+              <MapPin className="h-6 w-6" />
             </div>
             <div>
               <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold uppercase tracking-wider py-1 px-2.5 rounded-full">
-                {booking.session_type === "IN_PERSON" ? "In-Person (Tutor Portal)" : "Online Call (Tutor Portal)"}
+                In-Person Class (Tutor Portal)
               </span>
               <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1.5 flex items-center gap-2">
-                Classroom Room: #{booking.id}
+                Session Room: #{booking.id}
                 {booking.status === "Completed" && (
                   <span className="text-[10px] bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-400 font-bold border border-green-200 dark:border-green-900 px-2 py-0.5 rounded-full">
                     Completed
@@ -471,87 +437,62 @@ export default function TutorSessionPage() {
         {/* Split workspace */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* Workspace Area */}
+          {/* Workspace Area: Live Map & Movement Simulator */}
           <div className="lg:col-span-2 flex flex-col gap-8">
-            {booking.session_type === "IN_PERSON" ? (
-              <div className="flex flex-col gap-6">
-                <GoogleMap
-                  studentLat={booking.student_lat ?? 13.0282}
-                  studentLng={booking.student_lng ?? 80.0169}
-                  tutorLat={liveLat ?? booking.tutor_lat ?? 13.0282}
-                  tutorLng={liveLng ?? booking.tutor_lng ?? 80.0169}
-                  liveTutorLat={liveLat}
-                  liveTutorLng={liveLng}
-                  studentAddress={booking.student_address || "Saveetha Engineering College, Thandalam, Chennai"}
-                  tutorAddress={booking.tutor_address}
-                  trackingStatus={trackingStatus}
-                  onMapClick={handleMapClick}
-                />
+            <div className="flex flex-col gap-6">
+              <GoogleMap
+                studentLat={liveStudentLat ?? booking.student_lat ?? liveLat ?? 13.7547}
+                studentLng={liveStudentLng ?? booking.student_lng ?? liveLng ?? 78.7842}
+                tutorLat={liveLat ?? booking.tutor_lat ?? 13.7547}
+                tutorLng={liveLng ?? booking.tutor_lng ?? 78.7842}
+                liveTutorLat={liveLat}
+                liveTutorLng={liveLng}
+                liveStudentLat={liveStudentLat}
+                liveStudentLng={liveStudentLng}
+                studentAddress={booking.student_address || "Kalakada, Annamayya District, AP"}
+                tutorAddress={booking.tutor_address || "Kalakada, Annamayya District, AP"}
+                trackingStatus={trackingStatus}
+                onMapClick={handleMapClick}
+              />
 
-                {/* Live Distance Movement Controls */}
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
-                      <Navigation className="h-4 w-4 text-sky-400" />
-                      <span>Live Movement Simulator (Tap Map or Click Distance)</span>
-                    </div>
-                    <span className="text-[10px] text-slate-400">Tap anywhere on map to move pin</span>
+              {/* Live Distance Movement Controls */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+                    <Navigation className="h-4 w-4 text-sky-400" />
+                    <span>Live Movement Simulator (Tap Map or Click Distance)</span>
                   </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    <button
-                      onClick={() => handleSimulateMove(2.0)}
-                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-700"
-                    >
-                      <span>🚗 2.0 KM Away</span>
-                    </button>
-                    <button
-                      onClick={() => handleSimulateMove(1.0)}
-                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-700"
-                    >
-                      <span>🚗 1.0 KM Away</span>
-                    </button>
-                    <button
-                      onClick={() => handleSimulateMove(0.4)}
-                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-yellow-400 text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-700"
-                    >
-                      <span>⚡ 500m Nearby</span>
-                    </button>
-                    <button
-                      onClick={() => handleSimulateMove(0.0)}
-                      className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20"
-                    >
-                      <span>🏁 Arrived (0 KM)</span>
-                    </button>
-                  </div>
+                  <span className="text-[10px] text-slate-400">Tap anywhere on map to move pin</span>
                 </div>
 
-
-
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button
+                    onClick={() => handleSimulateMove(2.0)}
+                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-700"
+                  >
+                    <span>🚗 2.0 KM Away</span>
+                  </button>
+                  <button
+                    onClick={() => handleSimulateMove(1.0)}
+                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-700"
+                  >
+                    <span>🚗 1.0 KM Away</span>
+                  </button>
+                  <button
+                    onClick={() => handleSimulateMove(0.4)}
+                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-yellow-400 text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-700"
+                  >
+                    <span>⚡ 500m Nearby</span>
+                  </button>
+                  <button
+                    onClick={() => handleSimulateMove(0.0)}
+                    className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20"
+                  >
+                    <span>🏁 Arrived (0 KM)</span>
+                  </button>
+                </div>
               </div>
-            ) : (
-              <div className="flex flex-col gap-6">
-                {videoSession && videoSession.meeting_id ? (
-                  <JitsiMeetRoom
-                    roomId={videoSession.meeting_id}
-                    userName={name || "Tutor"}
-                    userRole="Tutor"
-                    bookingId={booking.id}
-                    onCallEnd={() => fetchDetails()}
-                  />
-                ) : (
-                  <div className="h-[400px] bg-slate-900/90 border border-slate-800 rounded-2xl flex flex-col justify-center items-center gap-4 text-center p-6 shadow-inner">
-                    <Video className="h-14 w-14 text-slate-700 animate-pulse" />
-                    <div>
-                      <h3 className="text-slate-200 font-bold text-base">Virtual Classroom not started</h3>
-                      <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                        Click &ldquo;Generate Virtual Classroom&rdquo; in the panel on the right to create your session room and let your student join.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+            </div>
           </div>
 
           {/* Controls Sidebar */}
@@ -570,25 +511,12 @@ export default function TutorSessionPage() {
             </div>
 
             {/* Workflow state controllers */}
-            {booking.session_type === "IN_PERSON" ? (
-              <LiveTrackingPanel
-                status={trackingStatus}
-                isTutor={true}
-                onStatusChange={handleTrackingStatusChange}
-                loading={actionLoading}
-              />
-            ) : (
-              <VideoSessionPanel
-                status={videoSession?.status || "Scheduled"}
-                meetingId={videoSession?.meeting_id}
-                meetingLink={videoSession?.meeting_link}
-                isTutor={true}
-                onCreateRoom={handleCreateRoom}
-                onStartSession={handleStartVideoSession}
-                onEndSession={handleEndVideoSession}
-                loading={actionLoading}
-              />
-            )}
+            <LiveTrackingPanel
+              status={trackingStatus}
+              isTutor={true}
+              onStatusChange={handleTrackingStatusChange}
+              loading={actionLoading}
+            />
 
           </div>
 

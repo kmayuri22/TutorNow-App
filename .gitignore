@@ -65,6 +65,9 @@ htmlcov/
 
 # Databases
 *.db
+*.db-shm
+*.db-wal
+reports/
 *.sqlite
 *.sqlite3
 

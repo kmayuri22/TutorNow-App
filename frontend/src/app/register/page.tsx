@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import api from "@/services/api";
+import { supabaseRegister } from "@/services/supabaseService";
 import {
   User, Mail, Phone, Lock, UserPlus, Loader2, AlertCircle,
   FileText, Upload, CheckCircle2, BookOpen, MapPin, IndianRupee, Clock
@@ -29,7 +30,7 @@ const registerSchema = z.object({
   experience: z.coerce.number().min(0).optional(),
   hourly_rate: z.coerce.number().min(0).optional(),
   languages: z.string().optional(),
-  teaching_mode: z.enum(["Online", "Offline", "Both"]).optional(),
+  teaching_mode: z.string().optional(),
   location_city: z.string().optional(),
   location_address: z.string().optional(),
   bio: z.string().optional(),
@@ -63,7 +64,7 @@ export default function Register() {
       role: defaultRole,
       experience: 0,
       hourly_rate: 300,
-      teaching_mode: "Online",
+      teaching_mode: "Offline",
     },
   });
 
@@ -75,64 +76,57 @@ export default function Register() {
     setSuccessMessage(null);
 
     try {
-      if (selectedRole === "Tutor") {
-        // Register full tutor account
-        const res = await api.post("/api/auth/register/tutor", data);
-        const registeredUserId = res.data.id;
-
-        // If certificate file attached, upload it
-        if (certificateFile) {
-          setUploadProgress("Uploading qualification documents...");
-          // We need token or login to upload via /api/uploads/certificate, or we upload via login
-          // Let's attempt auto-login to upload certificate
-          try {
-            const loginRes = await api.post("/api/auth/login", {
+      // 1. Direct Supabase Registration
+      try {
+        await supabaseRegister({
+          email: data.email,
+          password: data.password,
+          name: data.name,
+          role: selectedRole as "Student" | "Tutor",
+          mobile: data.mobile,
+          subject: data.subject,
+          qualification: data.qualification,
+          experience: data.experience,
+            hourly_rate: data.hourly_rate,
+            bio: data.bio,
+            teaching_mode: data.teaching_mode,
+            location_city: data.location_city,
+            location_address: data.location_address,
+          });
+        } catch (sbError: any) {
+          console.warn("Supabase direct register attempt:", sbError?.message);
+          // Fallback to FastAPI endpoint
+          if (selectedRole === "Tutor") {
+            await api.post("/api/auth/register/tutor", data);
+          } else {
+            await api.post("/api/auth/register", {
+              name: data.name,
               email: data.email,
+              mobile: data.mobile,
               password: data.password,
+              role: "Student",
             });
-            // Token temporarily attached for upload
-            const token = loginRes.data.access_token;
-
-            const formData = new FormData();
-            formData.append("file", certificateFile);
-            formData.append("doc_label", "Degree / Qualification Certificate");
-
-            await api.post("/api/uploads/certificate", formData, {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            });
-          } catch (uploadErr) {
-            console.warn("Certificate upload deferral:", uploadErr);
           }
         }
 
-        setSuccessMessage("Tutor registration successful! Your profile and documents have been submitted for Admin approval.");
-      } else {
-        // Student Registration
-        await api.post("/api/auth/register", {
-          name: data.name,
-          email: data.email,
-          mobile: data.mobile,
-          password: data.password,
-          role: "Student",
-        });
+        if (selectedRole === "Tutor") {
+          setSuccessMessage("Tutor registration successful! You can now log in using this account on Web and Mobile.");
+        } else {
+          setSuccessMessage("Student account registered successfully! Redirecting to login...");
+        }
 
-        setSuccessMessage("Student account registered successfully! Redirecting to login...");
+        setTimeout(() => {
+          router.push("/login");
+        }, 2000);
+      } catch (error: any) {
+        console.warn("Registration response details:", error.response?.data?.detail || error.message);
+        const detail = error.response?.data?.detail || error.message || "Registration failed. Email or Mobile may already be registered.";
+        setErrorMessage(detail);
+      } finally {
+        setLoading(false);
+        setUploadProgress(null);
       }
-
-      setTimeout(() => {
-        router.push("/login");
-      }, 3000);
-    } catch (error: any) {
-      console.warn("Registration response details:", error.response?.data?.detail || error.message);
-      const detail = error.response?.data?.detail || "Registration failed. Email or Mobile may already be registered.";
-      setErrorMessage(detail);
-    } finally {
-      setLoading(false);
-      setUploadProgress(null);
-    }
-  };
+    };
 
   return (
     <div className="py-12 bg-slate-50 dark:bg-slate-950 min-h-screen flex justify-center items-center px-4 transition-colors duration-200">
@@ -351,9 +345,7 @@ export default function Register() {
                     {...register("teaching_mode")}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
                   >
-                    <option value="Online">Online Video Call</option>
                     <option value="Offline">In-Person (Offline)</option>
-                    <option value="Both">Both (Online & In-Person)</option>
                   </select>
                 </div>
 

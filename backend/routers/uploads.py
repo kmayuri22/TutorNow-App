@@ -6,10 +6,11 @@ from sqlalchemy.orm import Session
 from database import get_db
 import models
 import auth
+from supabase_storage import upload_file_to_supabase, delete_file_from_supabase
 
 router = APIRouter(prefix="/api/uploads", tags=["Uploads"])
 
-# Directory where uploaded files will be stored
+# Local directory where fallback uploaded files will be stored
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -33,7 +34,7 @@ async def upload_certificate(
 ):
     """
     Upload a tutor qualification certificate (PDF or image).
-    Only accessible by authenticated tutors.
+    Uploads directly to Supabase Storage if configured, or falls back to local.
     """
     tutor = db.query(models.Tutor).filter(models.Tutor.user_id == current_user.id).first()
     if not tutor:
@@ -57,20 +58,32 @@ async def upload_certificate(
             detail=f"File exceeds the maximum allowed size of {MAX_FILE_SIZE_MB}MB."
         )
 
-    # Generate a unique filename to avoid collisions
-    extension = "pdf" if file_type == "pdf" else file.filename.rsplit(".", 1)[-1].lower()
-    unique_name = f"tutor_{tutor.id}_{uuid.uuid4().hex[:8]}.{extension}"
-    file_path = os.path.join(UPLOAD_DIR, unique_name)
+    # 1. Attempt upload to Supabase Storage
+    supabase_url, storage_path = upload_file_to_supabase(
+        file_bytes=file_bytes,
+        file_name=file.filename or "document.pdf",
+        content_type=content_type or "application/octet-stream",
+        folder="certificates"
+    )
 
-    # Write file to disk
-    with open(file_path, "wb") as f:
-        f.write(file_bytes)
+    if supabase_url and storage_path:
+        stored_path = storage_path
+        access_url = supabase_url
+    else:
+        # Fallback to local file system
+        extension = "pdf" if file_type == "pdf" else (file.filename.rsplit(".", 1)[-1].lower() if file.filename else "pdf")
+        unique_name = f"tutor_{tutor.id}_{uuid.uuid4().hex[:8]}.{extension}"
+        file_path = os.path.join(UPLOAD_DIR, unique_name)
+        with open(file_path, "wb") as f:
+            f.write(file_bytes)
+        stored_path = unique_name
+        access_url = f"/api/uploads/{unique_name}"
 
     # Store document record in DB
     doc = models.TutorDocument(
         tutor_id=tutor.id,
-        file_name=file.filename or unique_name,
-        file_path=unique_name,   # Store only the relative filename
+        file_name=file.filename or stored_path,
+        file_path=stored_path,
         file_type=file_type,
         doc_label=doc_label,
     )
@@ -84,7 +97,7 @@ async def upload_certificate(
         "file_path": doc.file_path,
         "file_type": doc.file_type,
         "doc_label": doc.doc_label,
-        "url": f"/api/uploads/{unique_name}",
+        "url": access_url,
         "uploaded_at": doc.uploaded_at,
     }
 
@@ -95,7 +108,7 @@ async def upload_profile_photo(
     current_user: models.User = Depends(auth.RoleChecker(["Tutor"])),
     db: Session = Depends(get_db),
 ):
-    """Upload tutor profile photo (image only)."""
+    """Upload tutor profile photo (image only) to Supabase Storage or local."""
     tutor = db.query(models.Tutor).filter(models.Tutor.user_id == current_user.id).first()
     if not tutor:
         raise HTTPException(status_code=404, detail="Tutor profile not found")
@@ -108,23 +121,32 @@ async def upload_profile_photo(
     if len(file_bytes) > MAX_FILE_SIZE_BYTES:
         raise HTTPException(status_code=400, detail=f"File exceeds the {MAX_FILE_SIZE_MB}MB limit.")
 
-    extension = file.filename.rsplit(".", 1)[-1].lower() if file.filename else "jpg"
-    unique_name = f"photo_{tutor.id}_{uuid.uuid4().hex[:8]}.{extension}"
-    file_path = os.path.join(UPLOAD_DIR, unique_name)
+    # 1. Attempt upload to Supabase Storage
+    supabase_url, storage_path = upload_file_to_supabase(
+        file_bytes=file_bytes,
+        file_name=file.filename or "profile.jpg",
+        content_type=content_type or "image/jpeg",
+        folder="avatars"
+    )
 
-    with open(file_path, "wb") as f:
-        f.write(file_bytes)
+    if supabase_url:
+        tutor.profile_image = supabase_url
+    else:
+        # Fallback to local disk
+        extension = file.filename.rsplit(".", 1)[-1].lower() if file.filename else "jpg"
+        unique_name = f"photo_{tutor.id}_{uuid.uuid4().hex[:8]}.{extension}"
+        file_path = os.path.join(UPLOAD_DIR, unique_name)
+        with open(file_path, "wb") as f:
+            f.write(file_bytes)
+        tutor.profile_image = f"/api/uploads/{unique_name}"
 
-    tutor.profile_image = f"/api/uploads/{unique_name}"
     db.commit()
+    return {"profile_image": tutor.profile_image}
 
-    return {"profile_image": tutor.profile_image, "filename": unique_name}
 
-
-@router.get("/{filename}")
+@router.get("/{filename:path}")
 def serve_file(filename: str):
-    """Serve an uploaded file by filename."""
-    # Sanitize path to prevent directory traversal
+    """Serve an uploaded local file by filename."""
     safe_name = os.path.basename(filename)
     file_path = os.path.join(UPLOAD_DIR, safe_name)
     if not os.path.isfile(file_path):
@@ -138,7 +160,7 @@ def delete_certificate(
     current_user: models.User = Depends(auth.RoleChecker(["Tutor"])),
     db: Session = Depends(get_db),
 ):
-    """Delete a tutor's uploaded document."""
+    """Delete a tutor's uploaded document from Supabase Storage and database."""
     tutor = db.query(models.Tutor).filter(models.Tutor.user_id == current_user.id).first()
     if not tutor:
         raise HTTPException(status_code=404, detail="Tutor profile not found")
@@ -150,11 +172,18 @@ def delete_certificate(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    # Remove from disk
+    # Try deleting from Supabase
+    delete_file_from_supabase(doc.file_path)
+
+    # Also clean up local file if it exists
     file_path = os.path.join(UPLOAD_DIR, doc.file_path)
     if os.path.isfile(file_path):
-        os.remove(file_path)
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
 
     db.delete(doc)
     db.commit()
     return {"message": "Document deleted successfully"}
+

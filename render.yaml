@@ -13,6 +13,10 @@ services:
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "1440"
       - key: DATABASE_URL
-        value: postgresql://postgres.oedafagwhpatywxvmgwj:harshitha%407890@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres?sslmode=require
+        value: postgresql://postgres.oedafagwhpatywxvmgwj:harshitha%407890@aws-0-ap-northeast-2.pooler.supabase.com:6543/postgres?sslmode=require
+      - key: SUPABASE_URL
+        value: https://oedafagwhpatywxvmgwj.supabase.co
+      - key: SUPABASE_KEY
+        value: sb_publishable_b6IxDFdy3K6AlkkIA194tw_uv9AEbtL
     autoDeploy: true
 

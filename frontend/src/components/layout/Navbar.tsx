@@ -98,7 +98,7 @@ export default function Navbar() {
             <Link href="/" className={`text-sm font-medium transition-colors ${pathname === "/" ? "text-primary-600 dark:text-primary-400" : "text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"}`}>
               Home
             </Link>
-            <Link href="/tutors" className={`text-sm font-medium transition-colors ${pathname === "/tutors" ? "text-primary-600 dark:text-primary-400" : "text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"}`}>
+            <Link href={isAuthenticated && role === "Student" ? "/student/tutors" : "/tutors"} className={`text-sm font-medium transition-colors ${pathname === "/tutors" || pathname === "/student/tutors" ? "text-primary-600 dark:text-primary-400" : "text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"}`}>
               Find Tutors
             </Link>
             <Link href="/about" className={`text-sm font-medium transition-colors ${pathname === "/about" ? "text-primary-600 dark:text-primary-400" : "text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"}`}>
@@ -267,9 +267,9 @@ export default function Navbar() {
             Home
           </Link>
           <Link 
-            href="/tutors" 
+            href={isAuthenticated && role === "Student" ? "/student/tutors" : "/tutors"} 
             onClick={() => setMobileMenuOpen(false)}
-            className={`px-3 py-2 rounded-lg text-base font-medium ${pathname === "/tutors" ? "bg-slate-50 dark:bg-slate-800 text-primary-500" : "text-slate-600 dark:text-slate-300"}`}
+            className={`px-3 py-2 rounded-lg text-base font-medium ${pathname === "/tutors" || pathname === "/student/tutors" ? "bg-slate-50 dark:bg-slate-800 text-primary-500" : "text-slate-600 dark:text-slate-300"}`}
           >
             Find Tutors
           </Link>

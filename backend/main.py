@@ -39,6 +39,12 @@ def ensure_admin_exists():
 async def lifespan(app: FastAPI):
     # Startup
     Base.metadata.create_all(bind=engine)
+    try:
+        from supabase_sync import register_supabase_listeners, pull_initial_data_from_supabase
+        register_supabase_listeners()
+        pull_initial_data_from_supabase()
+    except Exception as e:
+        print(f"[WARN] Supabase sync setup error: {e}")
     ensure_admin_exists()
     try:
         from seed import seed_if_empty
@@ -100,6 +106,16 @@ async def global_exception_handler(request, exc):
 def read_root():
     return {"message": "Welcome to TutorNow API. Access documentation at /docs"}
 
+@app.get("/api/server-time")
+def get_server_time():
+    """Returns exact UTC server timestamp for client synchronization."""
+    import datetime
+    now = datetime.datetime.utcnow()
+    return {
+        "utc_timestamp": now.isoformat() + "Z",
+        "epoch_ms": int(now.timestamp() * 1000)
+    }
+
 # Include Routers
 app.include_router(auth.router)
 app.include_router(tutors.router)
@@ -138,3 +154,27 @@ async def websocket_tracking_endpoint(websocket: WebSocket, booking_id: int):
         manager.disconnect_tracking(booking_id, websocket)
     except Exception:
         manager.disconnect_tracking(booking_id, websocket)
+
+# WebSocket Endpoint for Real-time Native WebRTC Video Classroom & Whiteboard
+@app.websocket("/ws/video/{booking_id}")
+async def websocket_video_endpoint(websocket: WebSocket, booking_id: int):
+    await manager.connect_video(booking_id, websocket)
+    count = len(manager.video_connections.get(booking_id, []))
+    try:
+        # Send current room count to newly joined peer
+        await websocket.send_json({"type": "room_state", "peer_count": count})
+        # Notify other peers in room that a participant joined
+        await manager.broadcast_video(booking_id, {"type": "peer_joined", "peer_count": count}, sender_socket=websocket)
+        while True:
+            data = await websocket.receive_json()
+            # Broadcast WebRTC offer/answer/candidate/chat/whiteboard to the other party
+            await manager.broadcast_video(booking_id, data, sender_socket=websocket)
+    except WebSocketDisconnect:
+        manager.disconnect_video(booking_id, websocket)
+        remaining = len(manager.video_connections.get(booking_id, []))
+        await manager.broadcast_video(booking_id, {"type": "peer_left", "peer_count": remaining}, sender_socket=websocket)
+    except Exception:
+        manager.disconnect_video(booking_id, websocket)
+        remaining = len(manager.video_connections.get(booking_id, []))
+        await manager.broadcast_video(booking_id, {"type": "peer_left", "peer_count": remaining}, sender_socket=websocket)
+

@@ -1,7 +1,8 @@
 import { create } from "zustand";
+import { supabase } from "@/lib/supabase";
 
 interface User {
-  id: number;
+  id: number | string;
   name: string;
   email: string;
   mobile?: string;
@@ -23,6 +24,7 @@ interface AppState {
   email: string | null;
   mobile: string | null;
   userId: number | null;
+  supabaseUid: string | null;
   tutorStatus: string | null;
   isAuthenticated: boolean;
   login: (data: {
@@ -32,9 +34,10 @@ interface AppState {
     email: string;
     mobile?: string;
     user_id: number;
+    supabase_uid?: string | null;
     tutor_status?: string | null;
   }) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
 
   // Theme Slice
   theme: "light" | "dark";
@@ -67,6 +70,7 @@ export const useStore = create<AppState>((set) => {
   const initialMobile = getLocalStorageItem("mobile");
   const initialUserIdStr = getLocalStorageItem("userId");
   const initialUserId = initialUserIdStr ? parseInt(initialUserIdStr, 10) : null;
+  const initialSupabaseUid = getLocalStorageItem("supabaseUid");
   const initialTutorStatus = getLocalStorageItem("tutorStatus");
   const initialTheme = (getLocalStorageItem("theme") as "light" | "dark") || "light";
 
@@ -78,6 +82,7 @@ export const useStore = create<AppState>((set) => {
     email: initialEmail,
     mobile: initialMobile,
     userId: initialUserId,
+    supabaseUid: initialSupabaseUid,
     tutorStatus: initialTutorStatus,
     isAuthenticated: !!initialToken,
 
@@ -89,6 +94,7 @@ export const useStore = create<AppState>((set) => {
         localStorage.setItem("email", data.email);
         if (data.mobile) localStorage.setItem("mobile", data.mobile);
         localStorage.setItem("userId", data.user_id.toString());
+        if (data.supabase_uid) localStorage.setItem("supabaseUid", data.supabase_uid);
         if (data.tutor_status) localStorage.setItem("tutorStatus", data.tutor_status);
       }
       set({
@@ -98,12 +104,19 @@ export const useStore = create<AppState>((set) => {
         email: data.email,
         mobile: data.mobile || null,
         userId: data.user_id,
+        supabaseUid: data.supabase_uid || null,
         tutorStatus: data.tutor_status || null,
         isAuthenticated: true,
       });
     },
 
-    logout: () => {
+    logout: async () => {
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.warn("Supabase signout notice:", err);
+      }
+
       if (typeof window !== "undefined") {
         localStorage.removeItem("token");
         localStorage.removeItem("role");
@@ -111,6 +124,7 @@ export const useStore = create<AppState>((set) => {
         localStorage.removeItem("email");
         localStorage.removeItem("mobile");
         localStorage.removeItem("userId");
+        localStorage.removeItem("supabaseUid");
         localStorage.removeItem("tutorStatus");
       }
       set({
@@ -120,6 +134,7 @@ export const useStore = create<AppState>((set) => {
         email: null,
         mobile: null,
         userId: null,
+        supabaseUid: null,
         tutorStatus: null,
         isAuthenticated: false,
         notifications: [],

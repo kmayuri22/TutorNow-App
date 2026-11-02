@@ -43,12 +43,13 @@ class Tutor(Base):
 
     # Extended profile
     languages = Column(String(500), nullable=True)                       # Comma-separated
-    teaching_mode = Column(String(50), nullable=True, default="Online")  # Online, Offline, Both
+    teaching_mode = Column(String(50), nullable=True, default="Offline")  # Offline (In-Person)
     location_city = Column(String(255), nullable=True)
     location_address = Column(String(500), nullable=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
     is_online = Column(Boolean, default=False)                           # Live availability toggle
+    last_seen = Column(DateTime, nullable=True)                          # Heartbeat timestamp for online/offline status
 
     # Approval flow
     status = Column(String(50), nullable=False, default="Pending")       # Pending, Approved, Rejected
@@ -143,8 +144,8 @@ class Booking(Base):
     status = Column(String(50), nullable=False, default="Pending")  # Pending, Accepted, Rejected, Cancelled, Completed
     payment_status = Column(String(50), nullable=False, default="Unpaid")  # Unpaid, Paid
 
-    # Dual Booking System fields
-    session_type = Column(String(20), nullable=False, default="VIDEO_CALL")  # IN_PERSON | VIDEO_CALL
+    # Offline / In-Person Booking System fields
+    session_type = Column(String(20), nullable=False, default="IN_PERSON")  # IN_PERSON
     tracking_status = Column(String(50), nullable=True)  # Journey status for IN_PERSON
 
     # Location fields (stored at time of booking)

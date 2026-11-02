@@ -4,9 +4,10 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import api from "@/services/api";
+import { useStore } from "@/store/useStore";
 import { 
   Search, SlidersHorizontal, Star, ShieldCheck, GraduationCap, 
-  Clock, DollarSign, ArrowRight, X, User
+  Clock, IndianRupee, ArrowRight, X, User
 } from "lucide-react";
 
 interface Tutor {
@@ -28,6 +29,7 @@ interface Tutor {
 function TutorsSearchContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { isAuthenticated, role } = useStore();
 
   // Load initial filters from URL query parameters
   const [tutors, setTutors] = useState<Tutor[]>([]);
@@ -256,9 +258,14 @@ function TutorsSearchContent() {
                       <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                         {tutor.user.name}
                       </h2>
-                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-primary-50 dark:bg-primary-950/45 text-primary-700 dark:text-primary-400 font-bold mt-1.5 inline-block">
-                        {tutor.subject}
-                      </span>
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        <span className="text-xs px-2.5 py-0.5 rounded-full bg-primary-50 dark:bg-primary-950/45 text-primary-700 dark:text-primary-400 font-bold inline-block">
+                          {tutor.subject}
+                        </span>
+                        <span className="text-xs px-2.5 py-0.5 rounded-full bg-sky-50 dark:bg-sky-950/45 text-sky-700 dark:text-sky-400 font-bold inline-flex items-center gap-1">
+                          📍 In-Person (Offline)
+                        </span>
+                      </div>
                     </div>
 
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400 font-medium">
@@ -282,7 +289,7 @@ function TutorsSearchContent() {
                         <span>{tutor.rating.toFixed(1)}</span>
                       </div>
                       <div className="flex items-center text-sm font-extrabold text-slate-900 dark:text-white">
-                        <DollarSign className="h-4 w-4 text-slate-400" />
+                        <IndianRupee className="h-4 w-4 text-slate-400" />
                         <span>{tutor.hourly_rate}/hr</span>
                       </div>
                     </div>
@@ -291,7 +298,7 @@ function TutorsSearchContent() {
                   {/* Right: CTA button */}
                   <div className="sm:self-end mt-4 sm:mt-0">
                     <Link 
-                      href={`/tutors/${tutor.id}`}
+                      href={isAuthenticated && role === "Student" ? `/student/tutors?tutorId=${tutor.id}` : `/tutors/${tutor.id}`}
                       className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition"
                     >
                       Book Session

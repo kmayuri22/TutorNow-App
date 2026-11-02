@@ -160,6 +160,11 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     loadAdminData();
+    // Auto-poll admin metrics & pending approvals every 10 seconds
+    const interval = setInterval(() => {
+      loadAdminData();
+    }, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleTutorAction = async (tutorId: number, action: "approve" | "reject" | "request_changes", reason?: string) => {
@@ -197,27 +202,26 @@ export default function AdminDashboard() {
     }
   };
 
-  if (loading) {
+  if (loading && !analytics) {
     return (
-      <div className="space-y-6 text-left">
-        <div className="h-28 bg-white dark:bg-slate-900 border rounded-2xl animate-pulse"></div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          {Array.from({ length: 4 }).map((_, idx) => (
-            <div key={idx} className="h-24 bg-white dark:bg-slate-900 border rounded-2xl animate-pulse"></div>
-          ))}
-        </div>
-        <div className="h-64 bg-white dark:bg-slate-900 border rounded-2xl animate-pulse"></div>
+      <div className="py-24 flex flex-col items-center justify-center gap-3">
+        <Loader2 className="h-8 w-8 text-primary-500 animate-spin" />
+        <p className="text-xs font-semibold text-slate-400">Loading Admin Command Center...</p>
       </div>
     );
   }
 
   if (error || !analytics) {
     return (
-      <div className="max-w-md mx-auto py-20 px-4 text-center">
-        <ShieldAlert className="h-16 w-16 text-red-500 mx-auto mb-4" />
-        <h3 className="font-bold text-lg">{error}</h3>
-        <button onClick={loadAdminData} className="mt-4 px-6 py-2 bg-primary-600 text-white rounded-xl font-semibold">
-          Retry Load
+      <div className="py-16 max-w-md mx-auto text-center space-y-4">
+        <AlertCircle className="h-10 w-10 text-red-500 mx-auto" />
+        <h2 className="font-bold text-lg">Unable to Access Admin Metrics</h2>
+        <p className="text-xs text-slate-400">{error || "Admin privileges required."}</p>
+        <button
+          onClick={loadAdminData}
+          className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs rounded-xl shadow"
+        >
+          Retry Connection
         </button>
       </div>
     );
@@ -238,12 +242,22 @@ export default function AdminDashboard() {
           </h1>
           <p className="text-xs text-slate-500 mt-1">Review tutor applications, verify qualifications, monitor revenue, and audit system security.</p>
         </div>
-        {pendingTutors.length > 0 && (
-          <div className="px-4 py-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center gap-2 animate-pulse">
-            <Clock className="h-4 w-4 text-amber-500" />
-            {pendingTutors.length} Tutor Application{pendingTutors.length > 1 ? "s" : ""} Pending Review
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => loadAdminData()}
+            className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition border border-slate-200 dark:border-slate-700"
+            title="Refresh Admin Data"
+          >
+            <RotateCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+          {pendingTutors.length > 0 && (
+            <div className="px-4 py-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center gap-2 animate-pulse">
+              <Clock className="h-4 w-4 text-amber-500" />
+              {pendingTutors.length} Tutor Application{pendingTutors.length > 1 ? "s" : ""} Pending Review
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Metrics Cards */}
@@ -408,7 +422,7 @@ export default function AdminDashboard() {
                   </div>
                   <div className="text-right">
                     <span className="block text-lg font-extrabold text-primary-600">₹{tutor.hourly_rate} / hr</span>
-                    <span className="text-[10px] text-slate-400">Teaching Mode: {tutor.teaching_mode || "Online"}</span>
+                    <span className="text-[10px] text-slate-400">Teaching Mode: {tutor.teaching_mode || "Offline"}</span>
                   </div>
                 </div>
 

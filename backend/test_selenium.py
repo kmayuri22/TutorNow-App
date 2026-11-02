@@ -3309,5 +3309,13 @@ output_path = "E2E_Test_Report_TutorNow.xlsx"
 wb.save(output_path)
 
 print(f"[SUCCESS] E2E Excel Report generated successfully at: {os.path.abspath(output_path)}")
+
+# Also generate all 8 modular test reports for GitHub Actions artifacts
+try:
+    from generate_all_reports import generate_all
+    generate_all()
+except Exception as e:
+    print(f"[WARN] Modular reports generation note: {e}")
+
 print("--------------------------------------------------")
 sys.exit(0)

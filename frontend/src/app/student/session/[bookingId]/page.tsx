@@ -2,16 +2,15 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import { useStore } from "@/store/useStore";
 import api from "@/services/api";
 import { GoogleMap } from "@/components/maps/GoogleMap";
 import { LiveTrackingPanel } from "@/components/maps/LiveTrackingPanel";
-import { VideoSessionPanel } from "@/components/video/VideoSessionPanel";
-import { JitsiMeetRoom } from "@/components/video/JitsiMeetRoom";
-import { ArrowLeft, Calendar, Clock, DollarSign, User, ShieldCheck, Loader2, Video, MapPin, ExternalLink, HelpCircle, AlertCircle } from "lucide-react";
+import { formatBookingDate, isClassroomAvailable } from "@/lib/dateTime";
+import { ArrowLeft, Calendar, Clock, DollarSign, User, ShieldCheck, Loader2, MapPin, ExternalLink, HelpCircle, AlertCircle } from "lucide-react";
 
 interface UserResponse {
   id: number;
@@ -49,14 +48,6 @@ interface Booking {
   student: UserResponse;
 }
 
-interface VideoSession {
-  id: number;
-  booking_id: number;
-  meeting_id: string;
-  meeting_link: string;
-  status: string;
-}
-
 export default function StudentSessionPage() {
   const params = useParams();
   const router = useRouter();
@@ -64,7 +55,6 @@ export default function StudentSessionPage() {
   const bookingId = params.bookingId;
 
   const [booking, setBooking] = useState<Booking | null>(null);
-  const [videoSession, setVideoSession] = useState<VideoSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -148,16 +138,6 @@ export default function StudentSessionPage() {
       const res = await api.get(`/api/bookings/${bookingId}`);
       setBooking(res.data);
       setTrackingStatus(res.data.tracking_status || "Accepted");
-
-      if (res.data.session_type === "VIDEO_CALL") {
-        try {
-          const videoRes = await api.get(`/api/video/${bookingId}`);
-          setVideoSession(videoRes.data);
-        } catch (vErr) {
-          // Video call not generated yet, which is expected before tutor joins
-          console.log("Video session has not been generated yet.");
-        }
-      }
     } catch (err: any) {
       console.error(err);
       setError("Failed to load booking classroom details.");
@@ -172,23 +152,8 @@ export default function StudentSessionPage() {
     }
   }, [bookingId]);
 
-  // Auto-poll every 5s for video session creation (student side)
   useEffect(() => {
-    if (!booking || booking.session_type !== "VIDEO_CALL" || videoSession) return;
-    const interval = setInterval(() => {
-      api.get(`/api/video/${bookingId}`)
-        .then((res: any) => {
-          setVideoSession(res.data);
-          clearInterval(interval);
-        })
-        .catch(() => {/* not created yet, keep polling */});
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [booking, videoSession, bookingId]);
-
-
-  useEffect(() => {
-    if (!bookingId || !booking || booking.session_type !== "IN_PERSON") return;
+    if (!bookingId || !booking) return;
 
     const hostname = typeof window !== "undefined" ? window.location.hostname : "localhost";
     const wsProtocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -212,6 +177,9 @@ export default function StudentSessionPage() {
           if (data.status === "Session Completed") {
             fetchDetails();
           }
+        } else if (data.type === "student_tracking_update" && Number(data.booking_id) === Number(bookingId)) {
+          if (data.student_lat) setLiveStudentLat(data.student_lat);
+          if (data.student_lng) setLiveStudentLng(data.student_lng);
         }
       } catch (err) {
         console.error("Error parsing live tracking message:", err);
@@ -229,22 +197,15 @@ export default function StudentSessionPage() {
     };
   }, [bookingId, booking]);
 
-  // Handle in-app toast notifications from global WebSocket to check video/tracking triggers
-  useEffect(() => {
-    const handleNotification = (e: Event) => {
-      const data = (e as CustomEvent).detail;
-      if (data.booking_id && Number(data.booking_id) === Number(bookingId)) {
-        if (data.type === "video_session_created" || data.type === "video_session_started" || data.type === "video_session_ended") {
-          fetchDetails();
-        }
-      }
-    };
+  // Track real-time clock for scheduled start calculation
+  const [currentTimeMs, setCurrentTimeMs] = useState<number>(Date.now());
 
-    window.addEventListener("tutor_notification", handleNotification);
-    return () => {
-      window.removeEventListener("tutor_notification", handleNotification);
-    };
-  }, [bookingId]);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTimeMs(Date.now());
+    }, 10000);
+    return () => clearInterval(timer);
+  }, []);
 
   if (loading) {
     return (
@@ -267,12 +228,8 @@ export default function StudentSessionPage() {
     );
   }
 
-  const dateFormatted = new Date(booking.booking_date).toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const dateFormatted = formatBookingDate(booking.booking_date);
+  const classAvailability = isClassroomAvailable(booking.booking_date, booking.session_time, currentTimeMs);
 
   return (
     <div className="py-12 bg-slate-50 dark:bg-slate-950 min-h-screen transition-colors duration-200">
@@ -287,18 +244,31 @@ export default function StudentSessionPage() {
           Back to Dashboard
         </button>
 
+        {/* Scheduled Start Notice Banner if class is in the future */}
+        {!classAvailability.isAvailable && (
+          <div className="mb-6 p-4 rounded-2xl bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 text-sky-800 dark:text-sky-300 flex items-start gap-3 text-left">
+            <Clock className="h-6 w-6 shrink-0 mt-0.5 text-sky-500" />
+            <div>
+              <h4 className="font-extrabold text-sm">Upcoming In-Person Session</h4>
+              <p className="text-xs mt-0.5 text-sky-700 dark:text-sky-300 font-medium">
+                {classAvailability.formattedStartMessage} Live GPS tracking and route navigation are active below.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Classroom Header */}
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-880 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 text-left">
           <div className="flex items-center gap-4">
-            <div className={`p-3.5 rounded-2xl text-white shadow-md ${booking.session_type === "IN_PERSON" ? "bg-sky-600 dark:bg-sky-500" : "bg-indigo-600 dark:bg-indigo-500"}`}>
-              {booking.session_type === "IN_PERSON" ? <MapPin className="h-6 w-6" /> : <Video className="h-6 w-6" />}
+            <div className="p-3.5 rounded-2xl text-white shadow-md bg-sky-600 dark:bg-sky-500">
+              <MapPin className="h-6 w-6" />
             </div>
             <div>
               <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold uppercase tracking-wider py-1 px-2.5 rounded-full">
-                {booking.session_type === "IN_PERSON" ? "In-Person Class" : "Online Class"}
+                In-Person Class
               </span>
               <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1.5 flex items-center gap-2">
-                Classroom Room: #{booking.id}
+                Session Room: #{booking.id}
                 {booking.status === "Completed" && (
                   <span className="text-[10px] bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-400 font-bold border border-green-200 dark:border-green-900 px-2 py-0.5 rounded-full">
                     Completed
@@ -324,61 +294,25 @@ export default function StudentSessionPage() {
         {/* Split details row */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* Main workspace section */}
+          {/* Main workspace section: Live Map Tracking */}
           <div className="lg:col-span-2 flex flex-col gap-8">
-            {booking.session_type === "IN_PERSON" ? (
-              /* Geolocation Route displays */
-              <div className="flex flex-col gap-6">
-                <GoogleMap
-                  studentLat={liveStudentLat ?? booking.student_lat ?? 13.0282}
-                  studentLng={liveStudentLng ?? booking.student_lng ?? 80.0169}
-                  tutorLat={liveLat ?? booking.tutor_lat ?? 13.0282}
-                  tutorLng={liveLng ?? booking.tutor_lng ?? 80.0169}
+            <div className="flex flex-col gap-6">
+              <GoogleMap
+                studentLat={liveStudentLat ?? booking.student_lat ?? 13.7547}
+                studentLng={liveStudentLng ?? booking.student_lng ?? 78.7842}
+                tutorLat={liveLat ?? booking.tutor_lat ?? 13.7547}
+                tutorLng={liveLng ?? booking.tutor_lng ?? 78.7842}
 
-                  liveTutorLat={liveLat}
-                  liveTutorLng={liveLng}
-                  liveStudentLat={liveStudentLat}
-                  liveStudentLng={liveStudentLng}
-                  studentAddress={booking.student_address || "Saveetha Engineering College, Thandalam, Chennai"}
-                  tutorAddress={booking.tutor_address}
-                  trackingStatus={trackingStatus}
-                  onSyncGps={handleSyncGPS}
-                />
-
-
-              </div>
-            ) : (
-              /* Virtual room displays */
-              <div className="flex flex-col gap-6">
-                {videoSession && videoSession.meeting_id ? (
-                  <JitsiMeetRoom
-                    roomId={videoSession.meeting_id}
-                    userName={name || "Student"}
-                    userRole="Student"
-                    bookingId={booking.id}
-                    onCallEnd={() => router.push("/student/dashboard")}
-                  />
-                ) : (
-                  <div className="h-[400px] bg-slate-900/90 border border-slate-800 rounded-2xl flex flex-col justify-center items-center gap-4 text-center p-6 shadow-inner">
-                    <div className="relative">
-                      <Video className="h-14 w-14 text-slate-700" />
-                      <div className="absolute -top-1 -right-1 h-4 w-4 bg-amber-500 rounded-full animate-ping" />
-                    </div>
-                    <div>
-                      <h3 className="text-slate-200 font-bold text-base">Waiting for Tutor to Start</h3>
-                      <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                        Your tutor needs to click &ldquo;Generate Classroom&rdquo; from their session page. This page auto-refreshes every 5 seconds.
-                      </p>
-                    </div>
-                    <div className="flex gap-1 mt-2">
-                      {[0,1,2].map(i => (
-                        <span key={i} className="h-1.5 w-4 rounded-full bg-indigo-700 animate-pulse" style={{ animationDelay: `${i * 200}ms` }} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+                liveTutorLat={liveLat}
+                liveTutorLng={liveLng}
+                liveStudentLat={liveStudentLat}
+                liveStudentLng={liveStudentLng}
+                studentAddress={booking.student_address || "Kalakada, Annamayya District, AP"}
+                tutorAddress={booking.tutor_address || "Kalakada, Annamayya District, AP"}
+                trackingStatus={trackingStatus}
+                onSyncGps={handleSyncGPS}
+              />
+            </div>
           </div>
 
           {/* Sidebar controls / status widgets */}
@@ -396,20 +330,11 @@ export default function StudentSessionPage() {
               </div>
             </div>
 
-            {/* In-Person timeline status flow OR Online call options panel */}
-            {booking.session_type === "IN_PERSON" ? (
-              <LiveTrackingPanel
-                status={trackingStatus}
-                isTutor={false}
-              />
-            ) : (
-              <VideoSessionPanel
-                status={videoSession?.status || "Scheduled"}
-                meetingId={videoSession?.meeting_id}
-                meetingLink={videoSession?.meeting_link}
-                isTutor={false}
-              />
-            )}
+            {/* In-Person timeline status flow */}
+            <LiveTrackingPanel
+              status={trackingStatus}
+              isTutor={false}
+            />
 
           </div>
 

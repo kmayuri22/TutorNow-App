@@ -91,14 +91,67 @@ jobs:
           exit 1
         fi
 
-        # Run selenium E2E tests and generate Excel report with Vulnerability Audit sheet
+        # Run selenium E2E tests and generate Excel reports
         python backend/test_selenium.py
+        python backend/generate_all_reports.py
 
-    - name: Upload Excel Test Report Artifact
+    # -------------------------------------------------------------
+    # Upload Individual Modular Test Reports (Artifacts)
+    # -------------------------------------------------------------
+    - name: Upload Appium Android Report
       uses: actions/upload-artifact@v4
       with:
-        name: E2E_Test_Report_TutorNow
-        path: E2E_Test_Report_TutorNow.xlsx
+        name: appium-android-report
+        path: reports/appium-android-report.xlsx
+        if-no-files-found: error
+
+    - name: Upload Deployment Test Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: deployment-test-report
+        path: reports/deployment-test-report.xlsx
+        if-no-files-found: error
+
+    - name: Upload Full E2E Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: full-e2e-report
+        path: reports/full-e2e-report.xlsx
+        if-no-files-found: error
+
+    - name: Upload Load Test Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: load-test-report
+        path: reports/load-test-report.xlsx
+        if-no-files-found: error
+
+    - name: Upload Selenium Web Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: selenium-web-report
+        path: reports/selenium-web-report.xlsx
+        if-no-files-found: error
+
+    - name: Upload Unit Test Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: unit-test-report
+        path: reports/unit-test-report.xlsx
+        if-no-files-found: error
+
+    - name: Upload Validation Test Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: validation-test-report
+        path: reports/validation-test-report.xlsx
+        if-no-files-found: error
+
+    - name: Upload Vulnerability Test Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: vulnerability-test-report
+        path: reports/vulnerability-test-report.xlsx
         if-no-files-found: error
 
     - name: Upload Debug Logs

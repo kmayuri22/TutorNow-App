@@ -1,9 +1,10 @@
-import React from "react";
-import { Video, Play, StopCircle, ExternalLink, HelpCircle, Shield, Copy, Check } from "lucide-react";
-import { useState } from "react";
+"use client";
+
+import React, { useState } from "react";
+import { Video, Play, StopCircle, ExternalLink, Shield, Copy, Check } from "lucide-react";
 
 interface VideoSessionPanelProps {
-  status: string; // Scheduled | Active | Ended
+  status: string;
   meetingLink?: string;
   meetingId?: string;
   isTutor: boolean;
@@ -11,6 +12,8 @@ interface VideoSessionPanelProps {
   onStartSession?: () => void;
   onEndSession?: () => void;
   loading?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
 export const VideoSessionPanel: React.FC<VideoSessionPanelProps> = ({
@@ -22,6 +25,8 @@ export const VideoSessionPanel: React.FC<VideoSessionPanelProps> = ({
   onStartSession,
   onEndSession,
   loading = false,
+  disabled = false,
+  disabledReason,
 }) => {
   const [copied, setCopied] = useState(false);
 
@@ -69,7 +74,7 @@ export const VideoSessionPanel: React.FC<VideoSessionPanelProps> = ({
               Online Video Classroom
             </h3>
             <p className="text-xs text-slate-450 mt-0.5">
-              Secure virtual room powered by Jitsi Meet (no software install needed)
+              Secure virtual room powered by HD WebRTC Engine (no software install needed)
             </p>
           </div>
         </div>
@@ -80,7 +85,6 @@ export const VideoSessionPanel: React.FC<VideoSessionPanelProps> = ({
       </div>
 
       {!meetingId ? (
-        /* Video not created yet */
         <div className="py-6 flex flex-col items-center text-center gap-4 border border-dashed rounded-2xl p-6 bg-slate-50/55 dark:bg-slate-950/15">
           <Video className="h-10 w-10 text-slate-300 dark:text-slate-700 animate-pulse" />
           <div>
@@ -93,17 +97,23 @@ export const VideoSessionPanel: React.FC<VideoSessionPanelProps> = ({
           </div>
 
           {isTutor && onCreateRoom && (
-            <button
-              onClick={onCreateRoom}
-              disabled={loading}
-              className="px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs rounded-xl shadow-sm transition disabled:opacity-50"
-            >
-              Generate Virtual Classroom
-            </button>
+            <div className="flex flex-col items-center gap-2">
+              <button
+                onClick={onCreateRoom}
+                disabled={loading || disabled}
+                className="px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs rounded-xl shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Generate Virtual Classroom
+              </button>
+              {disabled && disabledReason && (
+                <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium max-w-xs">
+                  {disabledReason}
+                </span>
+              )}
+            </div>
           )}
         </div>
       ) : (
-        /* Room details & call controls */
         <div className="flex flex-col gap-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div className="p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl flex flex-col gap-1.5">
@@ -137,7 +147,6 @@ export const VideoSessionPanel: React.FC<VideoSessionPanelProps> = ({
             </div>
           </div>
 
-          {/* Action console */}
           <div className="border-t dark:border-slate-850 pt-5 flex flex-col gap-4">
             <h4 className="text-xs font-bold text-slate-450 uppercase tracking-wider">
               Classroom Controls
@@ -185,14 +194,14 @@ export const VideoSessionPanel: React.FC<VideoSessionPanelProps> = ({
         </div>
       )}
 
-      {/* Security alert */}
       <div className="bg-sky-50/40 dark:bg-sky-950/10 border border-sky-150 dark:border-sky-900 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-sky-700 dark:text-sky-300">
         <Shield className="h-4 w-4 shrink-0 mt-0.5" />
         <span>
-          Jitsi Meet call streams are secure and encrypted. Audio/Video devices are requested only when entering the classroom. Ensure your webcam and microphone permissions are enabled.
+          Call streams are secure, encrypted, and peer-to-peer. Audio/Video devices are requested only when entering the classroom.
         </span>
       </div>
     </div>
   );
 };
+
 export default VideoSessionPanel;

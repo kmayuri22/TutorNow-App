@@ -114,14 +114,15 @@ def register(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
         )
 
     clean_email = user_data.email.lower().strip()
+    clean_mobile = user_data.mobile.strip() if user_data.mobile and user_data.mobile.strip() else None
 
     # Check for duplicate email
     if db.query(models.User).filter(func.lower(models.User.email) == clean_email).first():
         raise HTTPException(status_code=400, detail="Email is already registered")
 
     # Check for duplicate mobile
-    if user_data.mobile:
-        if db.query(models.User).filter(models.User.mobile == user_data.mobile.strip()).first():
+    if clean_mobile:
+        if db.query(models.User).filter(models.User.mobile == clean_mobile).first():
             raise HTTPException(status_code=400, detail="Mobile number is already registered")
 
     # Hash password and create user
@@ -129,7 +130,7 @@ def register(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
     new_user = models.User(
         name=user_data.name.strip(),
         email=clean_email,
-        mobile=user_data.mobile.strip() if user_data.mobile else None,
+        mobile=clean_mobile,
         password=hashed_password,
         role=user_data.role,
     )
@@ -172,21 +173,22 @@ def register_tutor_full(user_data: schemas.TutorRegisterCreate, db: Session = De
         )
 
     clean_email = user_data.email.lower().strip()
+    clean_mobile = user_data.mobile.strip() if user_data.mobile and user_data.mobile.strip() else None
 
     # Check for duplicate email
     if db.query(models.User).filter(func.lower(models.User.email) == clean_email).first():
         raise HTTPException(status_code=400, detail="Email is already registered")
 
     # Check for duplicate mobile
-    if user_data.mobile:
-        if db.query(models.User).filter(models.User.mobile == user_data.mobile.strip()).first():
+    if clean_mobile:
+        if db.query(models.User).filter(models.User.mobile == clean_mobile).first():
             raise HTTPException(status_code=400, detail="Mobile number is already registered")
 
     hashed_password = auth.get_password_hash(user_data.password)
     new_user = models.User(
         name=user_data.name.strip(),
         email=clean_email,
-        mobile=user_data.mobile.strip() if user_data.mobile else None,
+        mobile=clean_mobile,
         password=hashed_password,
         role="Tutor",
     )
@@ -205,7 +207,7 @@ def register_tutor_full(user_data: schemas.TutorRegisterCreate, db: Session = De
         profile_image=None,
         rating=0.0,
         languages=user_data.languages,
-        teaching_mode=user_data.teaching_mode or "Online",
+        teaching_mode=user_data.teaching_mode or "Offline",
         location_city=user_data.location_city,
         location_address=user_data.location_address,
         status="Pending",
@@ -279,6 +281,7 @@ def login(user_credentials: schemas.UserLogin, request: Request, db: Session = D
                 )
             elif tutor_profile.status == "Approved":
                 tutor_profile.is_online = True
+                tutor_profile.last_seen = datetime.datetime.utcnow()
                 db.commit()
 
     # Successful login – create token
@@ -318,6 +321,10 @@ def login_form(request: Request, form_data: OAuth2PasswordRequestForm = Depends(
         tp = db.query(models.Tutor).filter(models.Tutor.user_id == user.id).first()
         if tp:
             tutor_status = tp.status
+            if tp.status == "Approved":
+                tp.is_online = True
+                tp.last_seen = datetime.datetime.utcnow()
+                db.commit()
 
     access_token = auth.create_access_token(data={"sub": user.email, "role": user.role})
     log = _record_login(db, email=user.email, login_status="Success", user=user,
@@ -341,7 +348,13 @@ def logout(
     token: str = Depends(auth.oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Invalidate current JWT session."""
+    """Invalidate current JWT session and mark tutor offline."""
+    if current_user.role == "Tutor":
+        tutor = db.query(models.Tutor).filter(models.Tutor.user_id == current_user.id).first()
+        if tutor:
+            tutor.is_online = False
+            db.commit()
+
     payload = auth.get_token_payload(token)
     if payload:
         jti = payload.get("jti")
@@ -360,6 +373,7 @@ def logout(
                         log.logout_time = datetime.datetime.utcnow()
                 db.commit()
     return {"message": "Logged out successfully"}
+
 
 
 @router.post("/forgot-password")

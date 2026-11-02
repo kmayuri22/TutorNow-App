@@ -10,7 +10,7 @@ from websocket import manager
 
 router = APIRouter(prefix="/api/bookings", tags=["Bookings"])
 
-async def create_notification(db: Session, user_id: int, message: str):
+async def create_notification(db: Session, user_id: int, message: str, event_data: dict = None):
     # Create notification record in database
     notif = models.Notification(
         user_id=user_id,
@@ -21,14 +21,28 @@ async def create_notification(db: Session, user_id: int, message: str):
     db.commit()
     db.refresh(notif)
 
-    # Push in real-time if online
-    await manager.send_personal_message({
+    payload = {
         "type": "notification",
         "id": notif.id,
         "message": notif.message,
         "status": notif.status,
         "created_at": str(notif.created_at)
-    }, user_id)
+    }
+    if event_data:
+        payload.update(event_data)
+
+    # Push in real-time if online
+    await manager.send_personal_message(payload, user_id)
+
+@router.get("/server-time")
+def get_server_time():
+    """Returns exact UTC server timestamp for client synchronization."""
+    now = datetime.utcnow()
+    return {
+        "utc_timestamp": now.isoformat() + "Z",
+        "epoch_ms": int(now.timestamp() * 1000)
+    }
+
 
 @router.post("", response_model=schemas.BookingResponse, status_code=status.HTTP_201_CREATED)
 async def create_booking(
@@ -86,6 +100,34 @@ async def create_booking(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid session time characters. Use HH:MM format.")
 
+    # Past date & time validation
+    now_utc = datetime.utcnow()
+    try:
+        if isinstance(booking_date, str):
+            b_date_obj = datetime.strptime(booking_date, "%Y-%m-%d").date()
+        else:
+            b_date_obj = booking_date
+
+        booking_start_dt = datetime.combine(b_date_obj, start_time)
+        from datetime import timedelta
+        if booking_start_dt < (now_utc - timedelta(minutes=5)):
+            raise HTTPException(status_code=400, detail="Cannot book a date or time in the past.")
+    except HTTPException:
+        raise
+    except Exception as dt_err:
+        print("[WARN] Date check validation error:", dt_err)
+
+    # Conflict check for active bookings
+    existing_conflict = db.query(models.Booking).filter(
+        models.Booking.tutor_id == tutor.id,
+        models.Booking.booking_date == booking_date,
+        models.Booking.session_time == session_time,
+        models.Booking.status.in_(["Pending", "Accepted"])
+    ).first()
+
+    if existing_conflict:
+        raise HTTPException(status_code=400, detail="This tutor already has a booking for the selected date and time slot.")
+
     # Find slot
     slot = db.query(models.Availability).filter(
         models.Availability.tutor_id == tutor.id,
@@ -93,6 +135,7 @@ async def create_booking(
         models.Availability.start_time == start_time,
         models.Availability.end_time == end_time
     ).first()
+
 
     if slot:
         if slot.status != "Available":
@@ -109,7 +152,7 @@ async def create_booking(
         )
         db.add(slot)
     
-    # Create the Booking
+    # Create the Booking (All bookings are In-Person Offline with live GPS tracking)
     new_booking = models.Booking(
         student_id=current_user.id,
         tutor_id=tutor.id,
@@ -117,16 +160,17 @@ async def create_booking(
         session_time=session_time,
         status="Pending",
         payment_status="Unpaid",
-        session_type=session_type,
-        student_lat=booking_data.student_lat,
-        student_lng=booking_data.student_lng,
-        tutor_lat=booking_data.tutor_lat,
-        tutor_lng=booking_data.tutor_lng,
-        student_address=booking_data.student_address,
-        tutor_address=booking_data.tutor_address,
+        session_type="IN_PERSON",
+        tracking_status="Accepted",
+        student_lat=booking_data.student_lat or 13.0282,
+        student_lng=booking_data.student_lng or 80.0169,
+        tutor_lat=booking_data.tutor_lat or tutor.latitude or 13.0282,
+        tutor_lng=booking_data.tutor_lng or tutor.longitude or 80.0169,
+        student_address=booking_data.student_address or "Kalakada, Annamayya District, AP",
+        tutor_address=booking_data.tutor_address or tutor.location_address or "Kalakada, Annamayya District, AP",
         # compatibility fields
         subject=booking_data.subject,
-        booking_type=booking_data.booking_type,
+        booking_type="IN_PERSON",
         scheduled_at=booking_data.scheduled_at,
         duration=booking_data.duration,
         notes=booking_data.notes
@@ -155,7 +199,7 @@ def get_bookings(
     elif current_user.role == "Tutor":
         tutor = db.query(models.Tutor).filter(models.Tutor.user_id == current_user.id).first()
         if not tutor:
-            raise HTTPException(status_code=404, detail="Tutor profile not found")
+            return []
         return db.query(models.Booking).filter(
             models.Booking.tutor_id == tutor.id
         ).order_by(models.Booking.booking_date.desc()).all()
@@ -192,7 +236,12 @@ async def accept_booking(
 
     # Notify student
     student_message = f"Your booking request with Tutor {current_user.name} has been Accepted. Please proceed to payment."
-    await create_notification(db, booking.student_id, student_message)
+    await create_notification(db, booking.student_id, student_message, {
+        "event_type": "BOOKING_ACCEPTED",
+        "booking_id": booking.id,
+        "status": "Accepted",
+        "payment_status": booking.payment_status
+    })
 
     return booking
 
@@ -238,7 +287,11 @@ async def reject_booking(
 
     # Notify student
     student_message = f"Your booking request with Tutor {current_user.name} was rejected."
-    await create_notification(db, booking.student_id, student_message)
+    await create_notification(db, booking.student_id, student_message, {
+        "event_type": "BOOKING_REJECTED",
+        "booking_id": booking.id,
+        "status": "Rejected"
+    })
 
     return booking
 

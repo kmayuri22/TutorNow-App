@@ -28,7 +28,7 @@ export default function TutorProfile() {
   const [experience, setExperience] = useState(0);
   const [hourlyRate, setHourlyRate] = useState(500.0);
   const [languages, setLanguages] = useState("");
-  const [teachingMode, setTeachingMode] = useState("Online");
+  const [teachingMode, setTeachingMode] = useState("Offline");
   const [locationCity, setLocationCity] = useState("");
   const [locationAddress, setLocationAddress] = useState("");
   const [bio, setBio] = useState("");
@@ -57,7 +57,7 @@ export default function TutorProfile() {
         setExperience(data.tutor_details.experience || 0);
         setHourlyRate(data.tutor_details.hourly_rate || 0);
         setLanguages(data.tutor_details.languages || "");
-        setTeachingMode(data.tutor_details.teaching_mode || "Online");
+        setTeachingMode(data.tutor_details.teaching_mode || "Offline");
         setLocationCity(data.tutor_details.location_city || "");
         setLocationAddress(data.tutor_details.location_address || "");
         setBio(data.tutor_details.bio || "");
@@ -292,9 +292,7 @@ export default function TutorProfile() {
                 onChange={(e) => setTeachingMode(e.target.value)}
                 className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white font-semibold"
               >
-                <option value="Online">Online Video Call</option>
                 <option value="Offline">In-Person (Offline)</option>
-                <option value="Both">Both (Online & In-Person)</option>
               </select>
             </div>
 

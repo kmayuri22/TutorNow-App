@@ -57,7 +57,7 @@ export const SessionTypeCard: React.FC<SessionTypeCardProps> = ({
           <p className="text-xs text-slate-400 font-medium mt-0.5">
             {isInPerson
               ? "Tutor travels to your physical location"
-              : "HD Video meeting room powered by Jitsi"}
+              : "HD Video Classroom with interactive whiteboard"}
           </p>
         </div>
       </div>

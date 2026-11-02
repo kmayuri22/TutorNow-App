@@ -42,7 +42,7 @@ class TutorRegisterCreate(BaseModel):
     experience: Optional[int] = 0
     hourly_rate: Optional[float] = 0.0
     languages: Optional[str] = None        # Comma-separated
-    teaching_mode: Optional[str] = "Online"
+    teaching_mode: Optional[str] = "Offline"
     location_city: Optional[str] = None
     location_address: Optional[str] = None
     bio: Optional[str] = None
@@ -83,7 +83,7 @@ class TutorBase(BaseModel):
     bio: Optional[str] = None
     profile_image: Optional[str] = None
     languages: Optional[str] = None
-    teaching_mode: Optional[str] = "Online"
+    teaching_mode: Optional[str] = "Offline"
     location_city: Optional[str] = None
     location_address: Optional[str] = None
     latitude: Optional[float] = None
@@ -166,7 +166,7 @@ class BookingCreate(BaseModel):
     tutor_id: int
     booking_date: Optional[date] = None
     session_time: Optional[str] = None
-    session_type: str = "VIDEO_CALL"         # IN_PERSON | VIDEO_CALL
+    session_type: str = "IN_PERSON"          # IN_PERSON (Offline)
     student_lat: Optional[float] = None
     student_lng: Optional[float] = None
     tutor_lat: Optional[float] = None
@@ -213,8 +213,8 @@ class BookingResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class BookingDetailResponse(BookingResponse):
-    student: UserResponse
-    tutor: TutorResponse
+    student: Optional[UserResponse] = None
+    tutor: Optional[TutorResponse] = None
     model_config = ConfigDict(from_attributes=True)
 
 # ─────────────────────────────────────────────
@@ -250,7 +250,7 @@ class ReviewResponse(ReviewCreate):
     id: int
     student_id: int
     created_at: datetime
-    student: UserResponse
+    student: Optional[UserResponse] = None
     model_config = ConfigDict(from_attributes=True)
 
 # ─────────────────────────────────────────────

@@ -177,6 +177,32 @@ async def update_location(
     return event
 
 
+@router.post("/{booking_id}/update-student-location")
+async def update_student_location(
+    booking_id: int,
+    location: schemas.LiveTrackingEvent,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Student sends their live device GPS position — updates booking and broadcasts to tutor in real time."""
+    booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    booking.student_lat = location.latitude
+    booking.student_lng = location.longitude
+    db.commit()
+
+    payload = {
+        "type": "student_tracking_update",
+        "booking_id": booking_id,
+        "student_lat": location.latitude,
+        "student_lng": location.longitude,
+    }
+    await manager.broadcast_tracking(booking_id, payload)
+    return {"message": "Student location updated successfully", "student_lat": location.latitude, "student_lng": location.longitude}
+
+
 @router.get("/{booking_id}/location")
 def get_latest_location(
     booking_id: int,

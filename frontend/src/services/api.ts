@@ -39,26 +39,13 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor to handle token expiry / unauthenticated states
+// Response interceptor to handle token expiry gracefully
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response && error.response.status === 401) {
-      if (typeof window !== "undefined") {
-        try {
-          // Dynamically require useStore to avoid module loading order issues
-          const { useStore } = require("@/store/useStore");
-          useStore.getState().logout();
-        } catch (e) {
-          console.warn("Failed to clear store session dynamically:", e);
-        }
-        
-        // Avoid infinite redirect loops on public routes
-        const path = window.location.pathname;
-        if (path !== "/login" && path !== "/register" && path !== "/" && path !== "/tutors") {
-          window.location.href = "/login?msg=session_expired";
-        }
-      }
+    // Only log warning for debugging without killing session on background polling
+    if (error.response?.status === 401) {
+      console.warn("[API Notice] 401 Unauthorized for request:", error.config?.url);
     }
     return Promise.reject(error);
   }

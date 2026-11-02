@@ -30,6 +30,25 @@ interface Tutor {
   };
 }
 
+interface AvailabilitySlot {
+  id: number;
+  tutor_id: number;
+  date: string;
+  start_time: string;
+  end_time: string;
+  status: string;
+}
+
+function formatSlotTime(timeStr: string) {
+  if (!timeStr) return "";
+  const parts = timeStr.split(":");
+  const hr = parseInt(parts[0], 10);
+  const m = parts[1] || "00";
+  const period = hr >= 12 ? "PM" : "AM";
+  const displayHr = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
+  return `${displayHr}:${m} ${period}`;
+}
+
 export default function FindTutors() {
   const router = useRouter();
   const [tutors, setTutors] = useState<Tutor[]>([]);
@@ -45,11 +64,13 @@ export default function FindTutors() {
 
   // Booking Modal State
   const [bookingTutor, setBookingTutor] = useState<Tutor | null>(null);
-  const [sessionType, setSessionType] = useState<"VIDEO_CALL" | "IN_PERSON">("VIDEO_CALL");
+  const [sessionType, setSessionType] = useState<"IN_PERSON">("IN_PERSON");
   const [bookingDate, setBookingDate] = useState("");
-  const [bookingTime, setBookingTime] = useState("10:00 - 11:00");
+  const [bookingTime, setBookingTime] = useState("");
   const [bookingNotes, setBookingNotes] = useState("");
   const [bookingLoading, setBookingLoading] = useState(false);
+  const [tutorSlots, setTutorSlots] = useState<AvailabilitySlot[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
 
   const loadTutors = async () => {
     try {
@@ -68,6 +89,80 @@ export default function FindTutors() {
     loadTutors();
   }, []);
 
+  // Auto-open booking modal if tutorId parameter is provided in URL
+  useEffect(() => {
+    if (typeof window !== "undefined" && tutors.length > 0) {
+      const params = new URLSearchParams(window.location.search);
+      const targetId = params.get("tutorId");
+      if (targetId) {
+        const found = tutors.find((t) => t.id === Number(targetId));
+        if (found) {
+          setBookingTutor(found);
+        }
+      }
+    }
+  }, [tutors]);
+
+  // Fetch tutor's real availability slots when booking modal opens
+  useEffect(() => {
+    if (!bookingTutor) {
+      setTutorSlots([]);
+      setBookingDate("");
+      setBookingTime("");
+      return;
+    }
+
+    const fetchTutorSlots = async () => {
+      try {
+        setLoadingSlots(true);
+        const res = await api.get(`/api/availability/tutor/${bookingTutor.id}`);
+        const slots: AvailabilitySlot[] = res.data || [];
+        setTutorSlots(slots);
+
+        // Extract available dates
+        const availableDates = Array.from(new Set(slots.map((s) => s.date))).sort();
+        if (availableDates.length > 0) {
+          const initialDate = availableDates[0];
+          setBookingDate(initialDate);
+          const daySlots = slots.filter((s) => s.date === initialDate);
+          if (daySlots.length > 0) {
+            const first = daySlots[0];
+            setBookingTime(`${first.start_time.slice(0, 5)} - ${first.end_time.slice(0, 5)}`);
+          } else {
+            setBookingTime("");
+          }
+        } else {
+          // Default to today if no slots found
+          setBookingDate(new Date().toISOString().split("T")[0]);
+          setBookingTime("");
+        }
+      } catch (err) {
+        console.error("Failed to load tutor availability:", err);
+        setTutorSlots([]);
+      } finally {
+        setLoadingSlots(false);
+      }
+    };
+
+    fetchTutorSlots();
+  }, [bookingTutor]);
+
+  // Update selected time slot whenever bookingDate changes
+  useEffect(() => {
+    if (!bookingDate || tutorSlots.length === 0) return;
+    const daySlots = tutorSlots.filter((s) => s.date === bookingDate);
+    if (daySlots.length > 0) {
+      const formattedTimes = daySlots.map(
+        (s) => `${s.start_time.slice(0, 5)} - ${s.end_time.slice(0, 5)}`
+      );
+      if (!formattedTimes.includes(bookingTime)) {
+        setBookingTime(formattedTimes[0]);
+      }
+    } else {
+      setBookingTime("");
+    }
+  }, [bookingDate, tutorSlots]);
+
   // Filtered & Sorted Tutors
   const filteredTutors = tutors
     .filter((t) => {
@@ -79,14 +174,8 @@ export default function FindTutors() {
 
       const matchSubject = !selectedSubject || t.subject.toLowerCase().includes(selectedSubject.toLowerCase());
       
-      // Tutor Visibility Logic:
-      // - In-Person (Offline): Show tutor ONLY when actively logged in (is_online === true)
-      // - Video Call (Online): Scheduled in advance, tutor visible even if not logged in (is_online === false)
-      const matchMode =
-        !selectedMode ||
-        (selectedMode === "Offline"
-          ? (t.teaching_mode === "Offline" || t.teaching_mode === "Both") && t.is_online
-          : (t.teaching_mode === "Online" || t.teaching_mode === "Both"));
+      // Offline In-Person Tutors: All approved tutors are available for booking
+      const matchMode = !selectedMode || selectedMode === "Offline";
 
       const matchPrice = t.hourly_rate <= maxPrice;
 
@@ -138,7 +227,7 @@ export default function FindTutors() {
           </span>
           <h1 className="text-3xl font-extrabold">Find & Book Expert Tutors</h1>
           <p className="text-sm text-primary-100">
-            Connect with background-checked, Admin-approved tutors for online video sessions or in-person tutoring across India.
+            Connect with background-checked, Admin-approved tutors for in-person home tutoring with live GPS tracking across India.
           </p>
         </div>
 
@@ -174,16 +263,11 @@ export default function FindTutors() {
             <option value="English">English</option>
           </select>
 
-          {/* Mode Selector */}
-          <select
-            value={selectedMode}
-            onChange={(e) => setSelectedMode(e.target.value)}
-            className="px-3.5 py-2 border rounded-xl bg-slate-50 dark:bg-slate-950 text-xs font-semibold focus:outline-none dark:text-white"
-          >
-            <option value="">All Modes</option>
-            <option value="Online">Online Video Call</option>
-            <option value="Offline">In-Person (Offline)</option>
-          </select>
+          {/* Mode Selector (Offline In-Person Platform) */}
+          <div className="flex items-center gap-1.5 px-3 py-2 border rounded-xl bg-slate-50 dark:bg-slate-950 text-xs font-semibold text-sky-600 dark:text-sky-400">
+            <MapPin className="h-3.5 w-3.5" />
+            <span>In-Person (Offline)</span>
+          </div>
 
           {/* Price Range Slider */}
           <div className="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 border rounded-xl bg-slate-50 dark:bg-slate-950">
@@ -272,20 +356,10 @@ export default function FindTutors() {
                   <span className="px-2.5 py-1 rounded-xl bg-primary-50 dark:bg-primary-950/40 text-primary-700 dark:text-primary-300 font-bold">
                     {tutor.subject}
                   </span>
-                  <span className="px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium flex items-center gap-1">
-                    {tutor.teaching_mode === "Offline" ? <MapPin className="h-3 w-3 text-sky-600" /> : <Video className="h-3 w-3 text-indigo-600" />}
-                    {tutor.teaching_mode || "Online"}
+                  <span className="px-2.5 py-1 rounded-xl bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 font-bold flex items-center gap-1">
+                    <MapPin className="h-3 w-3 text-sky-600" />
+                    In-Person (Offline)
                   </span>
-                  {tutor.is_online ? (
-                    <span className="px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-bold flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      Online Now
-                    </span>
-                  ) : (
-                    <span className="px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-medium">
-                      📅 Scheduled Video Session
-                    </span>
-                  )}
                   {tutor.location_city && (
                     <span className="px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-medium">
                       📍 {tutor.location_city}
@@ -311,13 +385,7 @@ export default function FindTutors() {
                 <button
                   onClick={() => {
                     setBookingTutor(tutor);
-                    setSessionType(
-                      tutor.teaching_mode === "Offline"
-                        ? "IN_PERSON"
-                        : tutor.is_online
-                        ? "VIDEO_CALL"
-                        : "VIDEO_CALL"
-                    );
+                    setSessionType("IN_PERSON");
                   }}
                   className="px-5 py-2.5 rounded-2xl bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5"
                 >
@@ -332,9 +400,9 @@ export default function FindTutors() {
 
       {/* Booking Modal */}
       {bookingTutor && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex justify-center items-center p-4">
-          <div className="max-w-lg w-full bg-white dark:bg-slate-900 border dark:border-slate-800 p-6 rounded-3xl flex flex-col gap-5 text-left shadow-2xl animate-fade-in">
-            <div className="flex justify-between items-center border-b dark:border-slate-800 pb-4">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex justify-center items-center p-3 sm:p-4 overflow-y-auto">
+          <div className="max-w-lg w-full max-h-[90vh] bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl flex flex-col text-left shadow-2xl animate-fade-in my-auto overflow-hidden">
+            <div className="flex justify-between items-center border-b dark:border-slate-800 p-5 shrink-0 bg-white dark:bg-slate-900">
               <div>
                 <h3 className="font-bold text-lg">Book Tutoring Session</h3>
                 <p className="text-xs text-slate-400">Schedule session with {bookingTutor.user.name}</p>
@@ -344,105 +412,135 @@ export default function FindTutors() {
               </button>
             </div>
 
-            {/* Session Type Switcher */}
+            <div className="p-5 overflow-y-auto flex-1 flex flex-col gap-5">
+
+            {/* Session Delivery Mode (In-Person Offline) */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-400 uppercase">Select Session Mode</label>
-              {bookingTutor.teaching_mode === "Both" ? (
-                <div className="grid grid-cols-2 gap-3 p-1 bg-slate-100 dark:bg-slate-950 rounded-2xl">
-                  <button
-                    type="button"
-                    onClick={() => setSessionType("VIDEO_CALL")}
-                    className={`py-2.5 rounded-xl text-xs font-bold flex justify-center items-center gap-2 transition ${sessionType === "VIDEO_CALL" ? "bg-white dark:bg-slate-800 text-indigo-600 shadow-sm" : "text-slate-500"}`}
-                  >
-                    <Video className="h-4 w-4" />
-                    Video Call Session
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!bookingTutor.is_online}
-                    onClick={() => {
-                      if (bookingTutor.is_online) {
-                        setSessionType("IN_PERSON");
-                      }
-                    }}
-                    className={`py-2.5 rounded-xl text-xs font-bold flex justify-center items-center gap-2 transition ${
-                      !bookingTutor.is_online
-                        ? "opacity-40 cursor-not-allowed text-slate-400 bg-slate-100 dark:bg-slate-900"
-                        : sessionType === "IN_PERSON"
-                        ? "bg-white dark:bg-slate-800 text-sky-600 shadow-sm"
-                        : "text-slate-500"
-                    }`}
-                    title={!bookingTutor.is_online ? "In-Person mode disabled because tutor is offline" : ""}
-                  >
-                    <MapPin className="h-4 w-4" />
-                    {bookingTutor.is_online ? "In-Person (Offline)" : "In-Person (Disabled - Offline)"}
-                  </button>
+              <label className="text-xs font-semibold text-slate-400 uppercase">Session Delivery Mode</label>
+              <div className="p-3 bg-sky-50/50 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-800 rounded-2xl flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400">
+                  <MapPin className="h-5 w-5" />
                 </div>
-              ) : (
-                <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center gap-3">
-                  {bookingTutor.teaching_mode === "Offline" ? (
-                    <>
-                      <div className="p-2 rounded-xl bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400">
-                        <MapPin className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">In-Person (Offline) Session</span>
-                        <span className="text-[10px] text-slate-400">This tutor offers In-Person Offline sessions only</span>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400">
-                        <Video className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">Online Video Call Session</span>
-                        <span className="text-[10px] text-slate-400">This tutor offers Online Video Call sessions only</span>
-                      </div>
-                    </>
-                  )}
+                <div>
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">In-Person (Offline) Tutoring</span>
+                  <span className="text-[10px] text-slate-400">Tutor travels to your physical location with live GPS route tracking</span>
                 </div>
-              )}
-
-              {/* In-Person offline notice */}
-              {sessionType === "IN_PERSON" && !bookingTutor.is_online && (
-                <div className="mt-1 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
-                  <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                  <span>In-Person sessions require the tutor to be actively logged in. This tutor is currently offline.</span>
-                </div>
-              )}
-            </div>
-
-
-            {/* Session Date & Time */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-slate-400 uppercase">Session Date</label>
-                <input
-                  type="date"
-                  value={bookingDate}
-                  min={new Date().toISOString().split("T")[0]}
-                  onChange={(e) => setBookingDate(e.target.value)}
-                  className="w-full px-3.5 py-2.5 border rounded-xl bg-slate-50 dark:bg-slate-950 text-xs focus:outline-none dark:text-white"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-slate-400 uppercase">Time Slot</label>
-                <select
-                  value={bookingTime}
-                  onChange={(e) => setBookingTime(e.target.value)}
-                  className="w-full px-3 py-2.5 border rounded-xl bg-slate-50 dark:bg-slate-950 text-xs focus:outline-none dark:text-white"
-                >
-                  <option value="09:00 - 10:00">09:00 AM - 10:00 AM</option>
-                  <option value="10:00 - 11:00">10:00 AM - 11:00 AM</option>
-                  <option value="11:00 - 12:00">11:00 AM - 12:00 PM</option>
-                  <option value="14:00 - 15:00">02:00 PM - 03:00 PM</option>
-                  <option value="16:00 - 17:00">04:00 PM - 05:00 PM</option>
-                  <option value="18:00 - 19:00">06:00 PM - 07:00 PM</option>
-                </select>
               </div>
             </div>
+
+
+            {/* Availability Slots Loader / Notice */}
+            {loadingSlots ? (
+              <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl flex items-center justify-center gap-2 text-xs text-slate-500">
+                <Loader2 className="h-4 w-4 animate-spin text-primary-600" />
+                <span>Loading tutor's available schedule...</span>
+              </div>
+            ) : tutorSlots.length === 0 ? (
+              <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-2xl flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-200">
+                <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">No Availability Slots Available</p>
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">This tutor has not published any schedule slots yet. Please check back later or choose another tutor.</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Quick Date Selector Chips */}
+                {Array.from(new Set(tutorSlots.map((s) => s.date))).length > 0 && (
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold text-slate-400 uppercase">Available Dates</label>
+                    <div className="flex flex-wrap gap-2">
+                      {Array.from(new Set(tutorSlots.map((s) => s.date))).sort().map((d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => setBookingDate(d)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 ${
+                            bookingDate === d
+                              ? "bg-primary-600 border-primary-600 text-white shadow-sm"
+                              : "bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-primary-400"
+                          }`}
+                        >
+                          <span className={`h-1.5 w-1.5 rounded-full ${bookingDate === d ? "bg-white" : "bg-emerald-500"}`} />
+                          {new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Session Date & Time */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold text-slate-400 uppercase">Session Date</label>
+                    <input
+                      type="date"
+                      value={bookingDate}
+                      min={new Date().toISOString().split("T")[0]}
+                      onChange={(e) => setBookingDate(e.target.value)}
+                      className="w-full px-3.5 py-2.5 border rounded-xl bg-slate-50 dark:bg-slate-950 text-xs focus:outline-none dark:text-white"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold text-slate-400 uppercase">Time Slot</label>
+                    {tutorSlots.filter((s) => s.date === bookingDate).length > 0 ? (
+                      <select
+                        value={bookingTime}
+                        onChange={(e) => setBookingTime(e.target.value)}
+                        className="w-full px-3 py-2.5 border rounded-xl bg-slate-50 dark:bg-slate-950 text-xs focus:outline-none dark:text-white font-medium"
+                      >
+                        {tutorSlots
+                          .filter((s) => s.date === bookingDate)
+                          .map((slot) => {
+                            const val = `${slot.start_time.slice(0, 5)} - ${slot.end_time.slice(0, 5)}`;
+                            const display = `${formatSlotTime(slot.start_time)} - ${formatSlotTime(slot.end_time)}`;
+                            return (
+                              <option key={slot.id} value={val}>
+                                {display} (Available)
+                              </option>
+                            );
+                          })}
+                      </select>
+                    ) : (
+                      <div className="px-3 py-2.5 border border-dashed border-amber-300 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl text-xs text-amber-700 dark:text-amber-400 font-medium">
+                        No slots for this date
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Slot Quick Selection Pills */}
+                {tutorSlots.filter((s) => s.date === bookingDate).length > 0 && (
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] font-semibold text-slate-400 uppercase">Available Slots on Selected Date</label>
+                    <div className="flex flex-wrap gap-2">
+                      {tutorSlots
+                        .filter((s) => s.date === bookingDate)
+                        .map((slot) => {
+                          const val = `${slot.start_time.slice(0, 5)} - ${slot.end_time.slice(0, 5)}`;
+                          const isSelected = bookingTime === val;
+                          return (
+                            <button
+                              key={slot.id}
+                              type="button"
+                              onClick={() => setBookingTime(val)}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 ${
+                                isSelected
+                                  ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
+                                  : "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100"
+                              }`}
+                            >
+                              <Clock className="h-3 w-3" />
+                              {formatSlotTime(slot.start_time)} - {formatSlotTime(slot.end_time)}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
 
             {/* Notes */}
             <div className="flex flex-col gap-1.5">
@@ -472,23 +570,28 @@ export default function FindTutors() {
               </div>
             </div>
 
-            {/* Submit */}
-            <button
-              onClick={handleCreateBooking}
-              disabled={bookingLoading || (sessionType === "IN_PERSON" && !bookingTutor.is_online)}
-              className="w-full py-3 bg-primary-600 hover:bg-primary-700 disabled:bg-slate-300 dark:disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-xs rounded-2xl shadow transition flex justify-center items-center gap-2 disabled:cursor-not-allowed"
-            >
-              {bookingLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Submitting Request...
-                </>
-              ) : (sessionType === "IN_PERSON" && !bookingTutor.is_online) ? (
-                "In-Person Booking Disabled (Tutor Offline)"
-              ) : (
-                `Confirm Booking (₹${bookingTutor.hourly_rate})`
-              )}
-            </button>
+              {/* Submit */}
+              <button
+                onClick={handleCreateBooking}
+                disabled={
+                  bookingLoading ||
+                  !bookingTime ||
+                  tutorSlots.filter((s) => s.date === bookingDate).length === 0
+                }
+                className="w-full py-3.5 bg-primary-600 hover:bg-primary-700 disabled:bg-slate-300 dark:disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-xs rounded-2xl shadow transition flex justify-center items-center gap-2 disabled:cursor-not-allowed mb-2 shrink-0"
+              >
+                {bookingLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Submitting Request...
+                  </>
+                ) : !bookingTime || tutorSlots.filter((s) => s.date === bookingDate).length === 0 ? (
+                  "Select an Available Time Slot"
+                ) : (
+                  `Confirm In-Person Booking (₹${bookingTutor.hourly_rate})`
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

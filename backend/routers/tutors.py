@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 from typing import List, Optional
+from datetime import datetime
 from database import get_db
 import models
 import schemas
@@ -42,38 +43,13 @@ def search_tutors(
         query = query.filter(models.Tutor.hourly_rate >= min_price)
     if max_price is not None:
         query = query.filter(models.Tutor.hourly_rate <= max_price)
-    if teaching_mode:
-        if teaching_mode in ["Offline", "In-Person"]:
-            # For In-Person sessions, show tutor ONLY when actively logged in (is_online == True)
-            query = query.filter(
-                models.Tutor.is_online == True,
-                or_(
-                    models.Tutor.teaching_mode == "Offline",
-                    models.Tutor.teaching_mode == "Both",
-                )
-            )
-        elif teaching_mode in ["Online", "Video Call", "VIDEO_CALL"]:
-            # For Video Call sessions, scheduled in advance, tutor visible even if not logged in
-            query = query.filter(
-                or_(
-                    models.Tutor.teaching_mode == "Online",
-                    models.Tutor.teaching_mode == "Both",
-                )
-            )
-        else:
-            query = query.filter(
-                or_(
-                    models.Tutor.teaching_mode == teaching_mode,
-                    models.Tutor.teaching_mode == "Both",
-                )
-            )
-    else:
-        # Default listing: include Online/Both tutors (online or offline),
-        # but purely Offline tutors are shown ONLY when actively logged in (is_online == True)
+    # Offline in-person platform: all approved tutors are available for in-person tutoring
+    if teaching_mode and teaching_mode not in ["All", "any"]:
         query = query.filter(
             or_(
-                models.Tutor.teaching_mode != "Offline",
-                models.Tutor.is_online == True,
+                models.Tutor.teaching_mode == "Offline",
+                models.Tutor.teaching_mode == "Both",
+                models.Tutor.teaching_mode == teaching_mode
             )
         )
     if language:
@@ -152,7 +128,7 @@ def get_tutor_details(tutor_id: int, db: Session = Depends(get_db)):
         "location_address": tutor.location_address,
         "latitude": tutor.latitude,
         "longitude": tutor.longitude,
-        "is_online": tutor.is_online,
+        "is_online": bool(tutor.is_online and (not tutor.last_seen or (datetime.utcnow() - tutor.last_seen).total_seconds() < 45)),
         "status": tutor.status,
         "location": location_formatted,
         "availabilities": [
@@ -219,5 +195,39 @@ def toggle_online_status(
     if not tutor:
         raise HTTPException(status_code=404, detail="Tutor profile not found")
     tutor.is_online = is_online
+    if is_online:
+        from datetime import datetime
+        tutor.last_seen = datetime.utcnow()
     db.commit()
     return {"is_online": tutor.is_online}
+
+
+@router.post("/heartbeat")
+def tutor_heartbeat(
+    current_user: models.User = Depends(auth.RoleChecker(["Tutor"])),
+    db: Session = Depends(get_db),
+):
+    """Heartbeat endpoint sent periodically by tutor client to maintain online status."""
+    from datetime import datetime
+    tutor = db.query(models.Tutor).filter(models.Tutor.user_id == current_user.id).first()
+    if not tutor:
+        raise HTTPException(status_code=404, detail="Tutor profile not found")
+    tutor.is_online = True
+    tutor.last_seen = datetime.utcnow()
+    db.commit()
+    return {"is_online": True, "last_seen": tutor.last_seen.isoformat()}
+
+
+@router.post("/offline")
+def tutor_offline(
+    current_user: models.User = Depends(auth.RoleChecker(["Tutor"])),
+    db: Session = Depends(get_db),
+):
+    """Explicit offline endpoint called when tutor logs out or closes browser tab."""
+    tutor = db.query(models.Tutor).filter(models.Tutor.user_id == current_user.id).first()
+    if not tutor:
+        raise HTTPException(status_code=404, detail="Tutor profile not found")
+    tutor.is_online = False
+    db.commit()
+    return {"is_online": False}
+
