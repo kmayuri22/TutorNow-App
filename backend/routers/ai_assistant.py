@@ -19,11 +19,11 @@ import auth
 
 router = APIRouter(prefix="/api/ai", tags=["AI Learning Assistant"])
 
-# Gemini API configuration - using stable v1 endpoint
+# Gemini API configuration - using current model (Nov 2026)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_API_URL = (
     "https://generativelanguage.googleapis.com/v1/models/"
-    "gemini-1.5-flash:generateContent"
+    "gemini-3.8-flash:generateContent"
 )
 
 SYSTEM_PROMPT = (
