@@ -25,7 +25,7 @@ api.interceptors.request.use(
     if (typeof window !== "undefined") {
       // Use current window origin (same host & port 3000 as Next.js frontend)
       // Next.js rewrites will proxy all /api/* calls internally to FastAPI on http://127.0.0.1:8000
-      config.baseURL = process.env.NEXT_PUBLIC_API_URL || window.location.origin;
+      config.baseURL = process.env.NEXT_PUBLIC_API_URL || "https://tutornow-backend-z3mh.onrender.com";
 
       const token = localStorage.getItem("token");
       if (token) {

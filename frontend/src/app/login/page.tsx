@@ -45,13 +45,14 @@ export default function Login() {
       // 1. Primary: Direct Supabase Authentication
       let authResult;
       try {
-        authResult = await supabaseLogin(email, password);
-      } catch (sbError: any) {
-        // If Supabase direct login failed, check API endpoint
-        console.warn("Supabase auth attempt message:", sbError?.message);
+        // Try FastAPI backend first for admin accounts
         const response = await api.post("/api/auth/login", { email, password });
         authResult = response.data;
         loginUser(authResult);
+      } catch (apiError: any) {
+        // If FastAPI login failed, fall back to Supabase
+        console.warn("FastAPI auth attempt message:", apiError?.message);
+        authResult = await supabaseLogin(email, password);
       }
 
       // Check tutor status
