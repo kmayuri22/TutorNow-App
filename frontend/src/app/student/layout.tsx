@@ -7,7 +7,7 @@ import Link from "next/link";
 import api from "@/services/api";
 import { 
   User, LayoutDashboard, Calendar, CreditCard, 
-  Settings, LogOut, Loader2, BookOpen
+  Settings, LogOut, Loader2, BookOpen, BrainCircuit
 } from "lucide-react";
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
@@ -64,6 +64,10 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
           <Link href="/student/tutors" className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-semibold transition">
             <BookOpen className="h-4.5 w-4.5 text-indigo-500" />
             Find Tutors
+          </Link>
+          <Link href="/student/ai-assistant" className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-semibold transition">
+            <BrainCircuit className="h-4.5 w-4.5 text-purple-500" />
+            AI Learning Assistant
           </Link>
           <Link href="/student/profile" className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-semibold transition">
             <User className="h-4.5 w-4.5 text-slate-400" />

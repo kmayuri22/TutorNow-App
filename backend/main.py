@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from database import engine, Base, SessionLocal
 import models
 import auth as auth_utils
-from routers import auth, tutors, availability, bookings, payments, reviews, admin, notifications, tracking, video, uploads
+from routers import auth, tutors, availability, bookings, payments, reviews, admin, notifications, tracking, video, uploads, ai_assistant
 from websocket import manager
 
 
@@ -128,6 +128,7 @@ app.include_router(notifications.router)
 app.include_router(tracking.router)
 app.include_router(video.router)
 app.include_router(uploads.router)
+app.include_router(ai_assistant.router)
 
 # WebSocket Endpoint for Notifications
 @app.websocket("/ws/{user_id}")

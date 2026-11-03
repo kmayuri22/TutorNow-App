@@ -339,3 +339,34 @@ class VideoSessionResponse(BaseModel):
     end_time: Optional[datetime] = None
     status: str
     model_config = ConfigDict(from_attributes=True)
+
+
+# ─────────────────────────────────────────────
+# AI Learning Assistant Schemas
+# ─────────────────────────────────────────────
+
+class AIChatRequest(BaseModel):
+    message: str
+    subject: Optional[str] = "General"
+    session_id: Optional[str] = None          # Pass existing session_id to continue a conversation
+
+class AIChatResponse(BaseModel):
+    reply: str
+    session_id: str
+
+class AIChatMessageResponse(BaseModel):
+    id: int
+    user_id: int
+    session_id: str
+    role: str
+    content: str
+    subject: Optional[str] = None
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class AIChatSessionSummary(BaseModel):
+    session_id: str
+    subject: Optional[str] = None
+    first_message: str
+    created_at: datetime
+    message_count: int

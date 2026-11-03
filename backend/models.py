@@ -23,6 +23,7 @@ class User(Base):
     reviews_written = relationship("Review", back_populates="student", cascade="all, delete-orphan")
     login_history = relationship("LoginHistory", back_populates="user", cascade="all, delete-orphan")
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
+    ai_chat_messages = relationship("AIChatMessage", back_populates="user", cascade="all, delete-orphan")
 
 
 class Tutor(Base):
@@ -273,3 +274,23 @@ class VideoSession(Base):
 
     # Relationships
     booking = relationship("Booking", back_populates="video_session")
+
+
+# ─────────────────────────────────────────────
+# AI Learning Assistant – Chat History
+# ─────────────────────────────────────────────
+
+class AIChatMessage(Base):
+    """Stores each message in a student's AI learning assistant conversation."""
+    __tablename__ = "ai_chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    session_id = Column(String(64), nullable=False, index=True)   # Groups messages into one conversation
+    role = Column(String(20), nullable=False)                      # "user" | "assistant"
+    content = Column(Text, nullable=False)
+    subject = Column(String(100), nullable=True)                   # Selected subject for context
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="ai_chat_messages")
