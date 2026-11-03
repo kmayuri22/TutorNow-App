@@ -136,6 +136,16 @@ def _call_gemini(messages: list, subject: str) -> str:
 
 # ── Endpoints ────────────────────────────────
 
+@router.get("/status")
+def ai_status():
+    """Diagnostic endpoint to check AI service configuration."""
+    return {
+        "api_key_configured": bool(GEMINI_API_KEY),
+        "api_key_length": len(GEMINI_API_KEY) if GEMINI_API_KEY else 0,
+        "api_url": GEMINI_API_URL
+    }
+
+
 @router.post("/chat", response_model=schemas.AIChatResponse)
 def chat_with_ai(
     request: schemas.AIChatRequest,
