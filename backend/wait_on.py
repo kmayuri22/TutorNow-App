@@ -2,9 +2,9 @@ import socket
 import time
 import sys
 
-def wait_for_ports(ports, host="127.0.0.1", timeout=60):
-    start_time = time.time()
+def wait_for_ports(ports, host="127.0.0.1", timeout=120):
     for port in ports:
+        start_time = time.time()
         print(f"Waiting for {host}:{port} to be responsive...")
         port_open = False
         while time.time() - start_time < timeout:

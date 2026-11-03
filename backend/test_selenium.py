@@ -3312,8 +3312,9 @@ print(f"[SUCCESS] E2E Excel Report generated successfully at: {os.path.abspath(o
 
 # Also generate all 8 modular test reports for GitHub Actions artifacts
 try:
-    from generate_all_reports import generate_all
-    generate_all()
+    reports_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generate_all_reports.py")
+    if os.path.exists(reports_script):
+        subprocess.run([sys.executable, reports_script], check=False)
 except Exception as e:
     print(f"[WARN] Modular reports generation note: {e}")
 

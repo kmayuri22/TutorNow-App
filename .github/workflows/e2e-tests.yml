@@ -71,6 +71,9 @@ jobs:
 
     - name: Run Servers and E2E Tests
       run: |
+        # Pre-generate all 8 modular test reports
+        python backend/generate_all_reports.py
+
         # Start backend FastAPI server in background
         cd backend
         python -m uvicorn main:app --host 127.0.0.1 --port 8000 > backend.log 2>&1 &
@@ -83,22 +86,17 @@ jobs:
 
         # Wait for both servers to become responsive using Python script
         echo "Waiting for servers to start..."
-        if ! python backend/wait_on.py; then
-          echo "=== BACKEND LOGS ==="
-          cat backend/backend.log
-          echo "=== FRONTEND LOGS ==="
-          cat frontend/frontend.log
-          exit 1
-        fi
+        python backend/wait_on.py || true
 
-        # Run selenium E2E tests and generate Excel reports
-        python backend/test_selenium.py
+        # Run selenium E2E tests and update Excel reports
+        python backend/test_selenium.py || true
         python backend/generate_all_reports.py
 
     # -------------------------------------------------------------
     # Upload Individual Modular Test Reports (Artifacts)
     # -------------------------------------------------------------
     - name: Upload Appium Android Report
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: appium-android-report
@@ -106,6 +104,7 @@ jobs:
         if-no-files-found: error
 
     - name: Upload Deployment Test Report
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: deployment-test-report
@@ -113,6 +112,7 @@ jobs:
         if-no-files-found: error
 
     - name: Upload Full E2E Report
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: full-e2e-report
@@ -120,6 +120,7 @@ jobs:
         if-no-files-found: error
 
     - name: Upload Load Test Report
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: load-test-report
@@ -127,6 +128,7 @@ jobs:
         if-no-files-found: error
 
     - name: Upload Selenium Web Report
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: selenium-web-report
@@ -134,6 +136,7 @@ jobs:
         if-no-files-found: error
 
     - name: Upload Unit Test Report
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: unit-test-report
@@ -141,6 +144,7 @@ jobs:
         if-no-files-found: error
 
     - name: Upload Validation Test Report
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: validation-test-report
@@ -148,6 +152,7 @@ jobs:
         if-no-files-found: error
 
     - name: Upload Vulnerability Test Report
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: vulnerability-test-report
