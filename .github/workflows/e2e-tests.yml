@@ -58,7 +58,7 @@ jobs:
     - name: Install Frontend Dependencies
       run: |
         cd frontend
-        npm install
+        npm install --legacy-peer-deps
 
     - name: "[Security] Frontend JS Dependency Vulnerability Audit (npm audit)"
       run: |
