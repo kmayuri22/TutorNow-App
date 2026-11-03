@@ -417,5 +417,39 @@ def generate_all():
         print(f"  * {f} ({os.path.getsize(fp) / 1024:.2f} KB)")
 
 
+def generate_single(target):
+    target = target.lower().strip()
+    if target in ("appium", "appium-android"):
+        create_standard_report("appium-android-report.xlsx", "Appium Android Mobile Automation Test Report", appium_cases)
+    elif target in ("deployment", "deployment-test"):
+        create_standard_report("deployment-test-report.xlsx", "Production Deployment & Infrastructure Verification Report", deployment_cases)
+    elif target in ("load", "load-test"):
+        create_standard_report("load-test-report.xlsx", "API Performance & Concurrency Load Test Report", load_cases)
+    elif target in ("selenium", "selenium-web"):
+        create_standard_report("selenium-web-report.xlsx", "Selenium Web Browser E2E Functional Test Report", selenium_cases)
+    elif target in ("unit", "unit-test"):
+        create_standard_report("unit-test-report.xlsx", "Backend & Frontend Unit Testing Report", unit_cases)
+    elif target in ("validation", "validation-test"):
+        create_standard_report("validation-test-report.xlsx", "Input Validation & Security Boundary Test Report", validation_cases)
+    elif target in ("vulnerability", "vulnerability-test", "security"):
+        create_standard_report("vulnerability-test-report.xlsx", "Vulnerability & Security Audit Report (pip-audit, bandit, npm-audit)", vulnerability_cases)
+    elif target in ("full", "full-e2e"):
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        existing_full = os.path.join(root_dir, "E2E_Test_Report_TutorNow.xlsx")
+        dest_full = os.path.join(REPORTS_DIR, "full-e2e-report.xlsx")
+        if os.path.exists(existing_full):
+            import shutil
+            shutil.copy2(existing_full, dest_full)
+            print(f"[OK] Generated full-e2e-report.xlsx from master report -> {os.path.getsize(dest_full)} bytes")
+        else:
+            all_cases = selenium_cases + appium_cases + unit_cases + validation_cases + load_cases + deployment_cases + vulnerability_cases
+            create_standard_report("full-e2e-report.xlsx", "Full Master E2E Quality & Verification Report", all_cases)
+    else:
+        generate_all()
+
+
 if __name__ == "__main__":
-    generate_all()
+    if len(sys.argv) > 1:
+        generate_single(sys.argv[1])
+    else:
+        generate_all()

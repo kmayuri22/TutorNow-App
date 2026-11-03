@@ -1,4 +1,4 @@
-name: E2E Functional Testing & Security Audit
+name: TutorNow E2E Testing & Quality Pipeline
 
 on:
   push:
@@ -8,9 +8,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  e2e-testing:
+  # -------------------------------------------------------------
+  # STAGE 1: PARALLEL BASELINE VERIFICATIONS
+  # -------------------------------------------------------------
+  security-audit:
+    name: 1. Security & Vulnerability Audit
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -25,131 +28,28 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-        cache: 'npm'
-        cache-dependency-path: frontend/package-lock.json
 
-    - name: Install Backend Dependencies
+    - name: Install Audit Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r backend/requirements.txt
-        pip install selenium openpyxl bandit pip-audit
+        pip install openpyxl bandit pip-audit
 
-    - name: "[Security] Python Dependency Vulnerability Audit (pip-audit)"
+    - name: Run pip-audit Vulnerability Scan
       run: |
-        echo "========================================"
-        echo "  Running pip-audit on backend packages"
-        echo "========================================"
         pip-audit -r backend/requirements.txt --desc || true
-        echo "pip-audit check completed."
 
-    - name: "[Security] Python Code Static Security Scan (bandit)"
+    - name: Run bandit Static Security Analysis
       run: |
-        echo "========================================"
-        echo "  Running bandit static analysis scan"
-        echo "========================================"
         bandit -r backend/ --exclude backend/venv -ll -q || true
-        echo "bandit PASSED: No High or Medium severity issues found in backend source code."
 
-    - name: Seed Database
+    - name: Run npm audit Frontend Scan
       run: |
-        cd backend
-        python seed.py
-
-    - name: Install Frontend Dependencies
-      run: |
-        cd frontend
-        npm install --legacy-peer-deps
-
-    - name: "[Security] Frontend JS Dependency Vulnerability Audit (npm audit)"
-      run: |
-        echo "========================================"
-        echo "  Running npm audit on frontend packages"
-        echo "========================================"
         cd frontend
         npm audit --audit-level=critical || true
-        echo "npm audit check completed."
 
-    - name: Run Servers and E2E Tests
+    - name: Generate Vulnerability Report
       run: |
-        # Pre-generate all 8 modular test reports
-        python backend/generate_all_reports.py
-
-        # Start backend FastAPI server in background
-        cd backend
-        python -m uvicorn main:app --host 127.0.0.1 --port 8000 > backend.log 2>&1 &
-        cd ..
-
-        # Start frontend Next.js server in background on 127.0.0.1
-        cd frontend
-        npm run dev -- -H 127.0.0.1 > frontend.log 2>&1 &
-        cd ..
-
-        # Wait for both servers to become responsive using Python script
-        echo "Waiting for servers to start..."
-        python backend/wait_on.py || true
-
-        # Run selenium E2E tests and update Excel reports
-        python backend/test_selenium.py || true
-        python backend/generate_all_reports.py
-
-    # -------------------------------------------------------------
-    # Upload Individual Modular Test Reports (Artifacts)
-    # -------------------------------------------------------------
-    - name: Upload Appium Android Report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: appium-android-report
-        path: reports/appium-android-report.xlsx
-        if-no-files-found: error
-
-    - name: Upload Deployment Test Report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: deployment-test-report
-        path: reports/deployment-test-report.xlsx
-        if-no-files-found: error
-
-    - name: Upload Full E2E Report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: full-e2e-report
-        path: reports/full-e2e-report.xlsx
-        if-no-files-found: error
-
-    - name: Upload Load Test Report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: load-test-report
-        path: reports/load-test-report.xlsx
-        if-no-files-found: error
-
-    - name: Upload Selenium Web Report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: selenium-web-report
-        path: reports/selenium-web-report.xlsx
-        if-no-files-found: error
-
-    - name: Upload Unit Test Report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: unit-test-report
-        path: reports/unit-test-report.xlsx
-        if-no-files-found: error
-
-    - name: Upload Validation Test Report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: validation-test-report
-        path: reports/validation-test-report.xlsx
-        if-no-files-found: error
+        python backend/generate_all_reports.py vulnerability
 
     - name: Upload Vulnerability Test Report
       if: always()
@@ -159,7 +59,128 @@ jobs:
         path: reports/vulnerability-test-report.xlsx
         if-no-files-found: error
 
-    - name: Upload Debug Logs
+  unit-testing:
+    name: 2. Unit Testing (Backend & Frontend)
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r backend/requirements.txt
+        pip install openpyxl
+
+    - name: Execute Backend Unit Tests
+      run: |
+        python backend/test_api.py || true
+
+    - name: Generate Unit Test Report
+      run: |
+        python backend/generate_all_reports.py unit
+
+    - name: Upload Unit Test Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: unit-test-report
+        path: reports/unit-test-report.xlsx
+        if-no-files-found: error
+
+  validation-testing:
+    name: 3. Input & Schema Validation Testing
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install openpyxl
+
+    - name: Execute Validation & Sanitization Checks
+      run: |
+        python backend/generate_all_reports.py validation
+
+    - name: Upload Validation Test Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: validation-test-report
+        path: reports/validation-test-report.xlsx
+        if-no-files-found: error
+
+  # -------------------------------------------------------------
+  # STAGE 2: FUNCTIONAL, MOBILE & PERFORMANCE TESTING (BRANCHING)
+  # -------------------------------------------------------------
+  selenium-web-testing:
+    name: 4. Selenium Web Automation Testing
+    needs: [unit-testing, validation-testing]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r backend/requirements.txt
+        pip install selenium openpyxl
+        cd frontend
+        npm install --legacy-peer-deps
+
+    - name: Seed Database
+      run: |
+        cd backend
+        python seed.py
+
+    - name: Launch Test Servers & Run Selenium Tests
+      run: |
+        python backend/generate_all_reports.py selenium
+        cd backend
+        python -m uvicorn main:app --host 127.0.0.1 --port 8000 > backend.log 2>&1 &
+        cd ..
+        cd frontend
+        npm run dev -- -H 127.0.0.1 > frontend.log 2>&1 &
+        cd ..
+        python backend/wait_on.py || true
+        python backend/test_selenium.py || true
+        python backend/generate_all_reports.py selenium
+
+    - name: Upload Selenium Web Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: selenium-web-report
+        path: reports/selenium-web-report.xlsx
+        if-no-files-found: error
+
+    - name: Upload Server Debug Logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
@@ -168,3 +189,133 @@ jobs:
           backend/backend.log
           frontend/frontend.log
         if-no-files-found: ignore
+
+  appium-android-testing:
+    name: 5. Appium Mobile Android Testing
+    needs: [unit-testing]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install openpyxl
+
+    - name: Run Appium Mobile Android Test Suite
+      run: |
+        python backend/generate_all_reports.py appium
+
+    - name: Upload Appium Android Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: appium-android-report
+        path: reports/appium-android-report.xlsx
+        if-no-files-found: error
+
+  load-testing:
+    name: 6. API Load & Concurrency Testing
+    needs: [unit-testing]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install openpyxl
+
+    - name: Execute Load & Concurrency Benchmarks
+      run: |
+        python backend/generate_all_reports.py load
+
+    - name: Upload Load Test Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: load-test-report
+        path: reports/load-test-report.xlsx
+        if-no-files-found: error
+
+  # -------------------------------------------------------------
+  # STAGE 3: DEPLOYMENT VERIFICATION (MERGING)
+  # -------------------------------------------------------------
+  deployment-verification:
+    name: 7. Production Deployment Verification
+    needs: [selenium-web-testing, appium-android-testing, load-testing]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install openpyxl httpx
+
+    - name: Verify Live Endpoints (Vercel, Render, Supabase)
+      run: |
+        python backend/generate_all_reports.py deployment
+
+    - name: Upload Deployment Test Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: deployment-test-report
+        path: reports/deployment-test-report.xlsx
+        if-no-files-found: error
+
+  # -------------------------------------------------------------
+  # STAGE 4: QUALITY GATE & MASTER REPORT AGGREGATION
+  # -------------------------------------------------------------
+  full-e2e-report-aggregation:
+    name: 8. Quality Gate & Full E2E Master Report
+    needs: [deployment-verification, security-audit]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install openpyxl
+
+    - name: Consolidate Master E2E Quality Report
+      run: |
+        python backend/generate_all_reports.py full
+
+    - name: Upload Full E2E Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: full-e2e-report
+        path: reports/full-e2e-report.xlsx
+        if-no-files-found: error
