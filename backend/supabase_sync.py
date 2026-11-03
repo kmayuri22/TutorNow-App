@@ -138,7 +138,7 @@ def pull_initial_data_from_supabase():
                         hourly_rate=row.get("hourly_rate", 0.0),
                         bio=row.get("bio"),
                         rating=row.get("rating", 0.0),
-                        status=row.get("status", "Approved")
+                        status=row.get("status", "Pending")
                     )
                     db.add(tutor)
                 else:
