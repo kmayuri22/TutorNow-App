@@ -6,6 +6,11 @@ API key is read from the GEMINI_API_KEY environment variable.
 """
 
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 import uuid
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
