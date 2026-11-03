@@ -76,7 +76,20 @@ export default function Register() {
     setSuccessMessage(null);
 
     try {
-      // 1. Direct Supabase Registration
+      // Always register with FastAPI backend first (ensures Pending status)
+      if (selectedRole === "Tutor") {
+        await api.post("/api/auth/register/tutor", data);
+      } else {
+        await api.post("/api/auth/register", {
+          name: data.name,
+          email: data.email,
+          mobile: data.mobile,
+          password: data.password,
+          role: "Student",
+        });
+      }
+
+      // Also register with Supabase for auth (best effort)
       try {
         await supabaseRegister({
           email: data.email,
@@ -87,27 +100,15 @@ export default function Register() {
           subject: data.subject,
           qualification: data.qualification,
           experience: data.experience,
-            hourly_rate: data.hourly_rate,
-            bio: data.bio,
-            teaching_mode: data.teaching_mode,
-            location_city: data.location_city,
-            location_address: data.location_address,
-          });
-        } catch (sbError: any) {
-          console.warn("Supabase direct register attempt:", sbError?.message);
-          // Fallback to FastAPI endpoint
-          if (selectedRole === "Tutor") {
-            await api.post("/api/auth/register/tutor", data);
-          } else {
-            await api.post("/api/auth/register", {
-              name: data.name,
-              email: data.email,
-              mobile: data.mobile,
-              password: data.password,
-              role: "Student",
-            });
-          }
-        }
+          hourly_rate: data.hourly_rate,
+          bio: data.bio,
+          teaching_mode: data.teaching_mode,
+          location_city: data.location_city,
+          location_address: data.location_address,
+        });
+      } catch (sbError: any) {
+        console.warn("Supabase sync notice:", sbError?.message);
+      }
 
         if (selectedRole === "Tutor") {
           setSuccessMessage("Tutor registration successful! You can now log in using this account on Web and Mobile.");
