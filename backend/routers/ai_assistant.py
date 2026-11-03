@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/ai", tags=["AI Learning Assistant"])
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_API_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
+    "https://generativelanguage.googleapis.com/v1/models/"
     "gemini-1.5-flash:generateContent"
 )
 
