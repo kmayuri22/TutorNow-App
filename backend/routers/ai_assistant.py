@@ -26,6 +26,12 @@ GEMINI_API_URL = (
     "gemini-3.8-flash:generateContent"
 )
 
+# Debug: Log if API key is configured (don't log the actual key!)
+if GEMINI_API_KEY:
+    print(f"✓ Gemini API key is configured (length: {len(GEMINI_API_KEY)})")
+else:
+    print("✗ WARNING: GEMINI_API_KEY environment variable is not set!")
+
 SYSTEM_PROMPT = (
     "You are an AI Learning Assistant for TutorNow, an educational platform. "
     "Your role is to help students understand academic concepts clearly and accurately. "
