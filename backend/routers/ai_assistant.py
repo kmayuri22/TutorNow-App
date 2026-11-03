@@ -1,7 +1,7 @@
 """
 AI Learning Assistant Router
 Provides AI-powered academic question answering for students.
-Uses Google Gemini (free tier) via the google-generativeai package.
+Uses Google Gemini API (free tier) via direct REST calls.
 API key is read from the GEMINI_API_KEY environment variable.
 """
 
@@ -19,6 +19,7 @@ import auth
 
 router = APIRouter(prefix="/api/ai", tags=["AI Learning Assistant"])
 
+# Gemini API configuration - using stable v1 endpoint
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_API_URL = (
     "https://generativelanguage.googleapis.com/v1/models/"
