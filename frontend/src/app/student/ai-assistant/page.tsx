@@ -9,6 +9,7 @@ import {
   MessageSquare, Trash2, Plus, BookOpen, Clock, X,
   Star, MapPin, User, ExternalLink
 } from "lucide-react";
+import PawPal, { PetType, PetMood } from "@/components/PawPal";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -154,6 +155,10 @@ export default function AILearningAssistant() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  // PawPal pet state
+  const [pet, setPet] = useState<PetType>("dog");
+  const [petMood, setPetMood] = useState<PetMood>("welcome");
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -228,6 +233,7 @@ export default function AILearningAssistant() {
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setLoading(true);
+    setPetMood("thinking"); // PawPal: thinking
 
     // Check if this is a tutor request so we can also fetch tutor cards
     const needsTutors = isTutorRequest(trimmed);
@@ -262,6 +268,7 @@ export default function AILearningAssistant() {
         ...prev,
         { role: "assistant", content: reply, tutors: tutors.length > 0 ? tutors : undefined },
       ]);
+      setPetMood("answered"); // PawPal: answered
     } catch (err: any) {
       const detail =
         err?.response?.data?.detail ||
@@ -391,6 +398,11 @@ export default function AILearningAssistant() {
         className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm flex flex-col overflow-hidden"
         style={{ minHeight: "520px" }}
       >
+        {/* PawPal pet companion */}
+        <div className="px-4 pt-3">
+          <PawPal mood={petMood} pet={pet} onChangePet={setPet} />
+        </div>
+
         {/* Subject Selector Bar */}
         <div className="flex items-center gap-3 px-5 py-3 border-b dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50">
           <BookOpen className="h-4 w-4 text-slate-400 shrink-0" />
