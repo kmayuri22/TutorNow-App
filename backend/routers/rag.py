@@ -1,138 +1,157 @@
 """
 RAG (Retrieval-Augmented Generation) Learning Assistant Router
-- Admin can upload PDF study materials
-- Students ask questions, answered using local vector search + Ollama
-- Uses ChromaDB for vector storage, sentence-transformers for embeddings
-- Falls back gracefully if Ollama is not running
+- Admin uploads PDF study materials
+- Text is extracted, chunked, and stored as JSON files (no heavy dependencies)
+- Students ask questions — relevant chunks are retrieved using keyword/TF-IDF scoring
+- Groq API (already configured) generates the final answer from retrieved context
+- Zero new dependencies beyond what is already installed (httpx, PyPDF2)
 """
 
 import os
+import re
 import uuid
 import json
+import math
 import httpx
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
-from fastapi.responses import JSONResponse
+from dotenv import load_dotenv
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from database import get_db
 import models
 import auth
 from pydantic import BaseModel
 
+load_dotenv()
+
 router = APIRouter(prefix="/api/rag", tags=["RAG Learning Assistant"])
 
-# ── Paths ────────────────────────────────────────────────────────────────
+# ── Storage paths (plain JSON files — no DB needed) ──────────────────────
 RAG_UPLOADS_DIR = Path("rag_uploads")
+RAG_INDEX_FILE  = Path("rag_uploads") / "index.json"
 RAG_UPLOADS_DIR.mkdir(exist_ok=True)
-CHROMA_DB_DIR = Path("chroma_db")
-CHROMA_DB_DIR.mkdir(exist_ok=True)
 
-# Ollama config — uses local Ollama or env override
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+# ── Groq API (reuse existing key) ────────────────────────────────────────
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL   = "openai/gpt-oss-20b"
 
-# ── Lazy-loaded singletons ───────────────────────────────────────────────
-_embedder = None
-_chroma_collection = None
+# ── Index helpers ─────────────────────────────────────────────────────────
 
-def get_embedder():
-    global _embedder
-    if _embedder is None:
+def load_index() -> dict:
+    """Load the JSON index that stores all document chunks."""
+    if RAG_INDEX_FILE.exists():
         try:
-            from sentence_transformers import SentenceTransformer
-            _embedder = SentenceTransformer("all-MiniLM-L6-v2")
-        except Exception as e:
-            raise HTTPException(503, f"Embedding model unavailable: {e}. Run: pip install sentence-transformers")
-    return _embedder
+            return json.loads(RAG_INDEX_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {"documents": [], "chunks": []}
 
-def get_collection():
-    global _chroma_collection
-    if _chroma_collection is None:
-        try:
-            import chromadb
-            client = chromadb.PersistentClient(path=str(CHROMA_DB_DIR))
-            _chroma_collection = client.get_or_create_collection(
-                name="tutornow_knowledge",
-                metadata={"hnsw:space": "cosine"},
-            )
-        except Exception as e:
-            raise HTTPException(503, f"ChromaDB unavailable: {e}. Run: pip install chromadb")
-    return _chroma_collection
+def save_index(index: dict):
+    RAG_INDEX_FILE.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
 
-# ── Helpers ───────────────────────────────────────────────────────────────
+# ── Text processing ───────────────────────────────────────────────────────
 
 def extract_text_from_pdf(path: str) -> str:
-    """Extract all text from a PDF file."""
     try:
         import PyPDF2
-        text = []
+        text_parts = []
         with open(path, "rb") as f:
             reader = PyPDF2.PdfReader(f)
             for page in reader.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text.append(page_text.strip())
-        return "\n".join(text)
+                t = page.extract_text()
+                if t:
+                    text_parts.append(t.strip())
+        return "\n".join(text_parts)
+    except ImportError:
+        raise HTTPException(503, "PyPDF2 not installed. Run: pip install pypdf2")
     except Exception as e:
         raise HTTPException(400, f"PDF extraction failed: {e}")
 
-def chunk_text(text: str, chunk_size: int = 500, overlap: int = 100) -> List[str]:
-    """Split text into overlapping chunks."""
-    words = text.split()
+def chunk_text(text: str, chunk_size: int = 400, overlap: int = 80) -> List[str]:
+    words  = text.split()
     chunks = []
-    start = 0
+    start  = 0
     while start < len(words):
-        end = min(start + chunk_size, len(words))
-        chunk = " ".join(words[start:end])
-        if chunk.strip():
+        end   = min(start + chunk_size, len(words))
+        chunk = " ".join(words[start:end]).strip()
+        if chunk:
             chunks.append(chunk)
         if end == len(words):
             break
         start += chunk_size - overlap
     return chunks
 
-def is_ollama_running() -> bool:
-    """Quick check whether Ollama is reachable."""
-    try:
-        resp = httpx.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=3.0)
-        return resp.status_code == 200
-    except Exception:
-        return False
+def tokenize(text: str) -> List[str]:
+    return re.findall(r"\b[a-z0-9]+\b", text.lower())
 
-def query_ollama(prompt: str) -> str:
-    """Send a prompt to Ollama and return the text response."""
+def tf_idf_score(query_tokens: List[str], chunk: str, all_chunks: List[str]) -> float:
+    """Simple TF-IDF relevance score between a query and a chunk."""
+    chunk_tokens = tokenize(chunk)
+    if not chunk_tokens:
+        return 0.0
+    N = len(all_chunks)
+    score = 0.0
+    for qt in query_tokens:
+        tf  = chunk_tokens.count(qt) / len(chunk_tokens)
+        df  = sum(1 for c in all_chunks if qt in tokenize(c))
+        idf = math.log((N + 1) / (df + 1)) + 1
+        score += tf * idf
+    return score
+
+def retrieve_chunks(question: str, subject: Optional[str], index: dict, top_k: int = 4) -> list:
+    """Return the top_k most relevant chunks for the question."""
+    all_chunks = index.get("chunks", [])
+    if not all_chunks:
+        return []
+
+    # Filter by subject if specified
+    pool = [c for c in all_chunks if not subject or c["subject"].lower() == subject.lower()]
+    if not pool:
+        pool = all_chunks  # fall back to all subjects
+
+    query_tokens = tokenize(question)
+    scored = [(tf_idf_score(query_tokens, c["text"], [x["text"] for x in pool]), c) for c in pool]
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [c for score, c in scored[:top_k] if score > 0]
+
+# ── Groq call ─────────────────────────────────────────────────────────────
+
+def call_groq(system_msg: str, user_msg: str) -> str:
+    if not GROQ_API_KEY:
+        raise HTTPException(503, "GROQ_API_KEY is not configured on the server.")
     try:
-        with httpx.Client(timeout=60.0) as client:
+        with httpx.Client(timeout=30.0) as client:
             resp = client.post(
-                f"{OLLAMA_BASE_URL}/api/generate",
+                GROQ_API_URL,
+                headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
                 json={
-                    "model": OLLAMA_MODEL,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0.3, "num_predict": 512},
+                    "model": GROQ_MODEL,
+                    "messages": [
+                        {"role": "system", "content": system_msg},
+                        {"role": "user",   "content": user_msg},
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens":  600,
                 },
             )
         if resp.status_code == 200:
-            return resp.json().get("response", "").strip()
-        return f"Ollama returned status {resp.status_code}."
+            return resp.json()["choices"][0]["message"]["content"].strip()
+        error = resp.json().get("error", {}).get("message", "Unknown error")
+        raise HTTPException(502, f"Groq API error: {error}")
     except httpx.TimeoutException:
-        return "Ollama timed out. The model may still be loading — try again in a moment."
+        raise HTTPException(504, "Groq API timed out. Please try again.")
+    except HTTPException:
+        raise
     except Exception as e:
-        return f"Could not reach Ollama: {e}"
+        raise HTTPException(502, f"Could not reach Groq API: {e}")
 
 # ── Schemas ───────────────────────────────────────────────────────────────
 
 class RAGQuestionRequest(BaseModel):
     question: str
     subject: Optional[str] = None
-
-class RAGDocument(BaseModel):
-    id: str
-    subject: str
-    document_name: str
-    chunk_count: int
-    uploaded_by: str
 
 # ── Admin endpoints ───────────────────────────────────────────────────────
 
@@ -143,51 +162,46 @@ async def upload_document(
     document_name: str = Form(...),
     current_user: models.User = Depends(auth.RoleChecker(["Admin"])),
 ):
-    """
-    Admin: upload a PDF study material.
-    Extracts text, chunks it, embeds, and stores in ChromaDB.
-    """
+    """Admin: upload a PDF, extract text, chunk it, store in JSON index."""
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Only PDF files are supported.")
 
-    # Save the PDF
     safe_name = f"{uuid.uuid4().hex}_{file.filename}"
     save_path = RAG_UPLOADS_DIR / safe_name
-    content = await file.read()
-    with open(save_path, "wb") as f:
-        f.write(content)
+    content   = await file.read()
+    save_path.write_bytes(content)
 
-    # Extract and chunk
     raw_text = extract_text_from_pdf(str(save_path))
     if not raw_text.strip():
         save_path.unlink(missing_ok=True)
-        raise HTTPException(400, "No readable text found in this PDF. It may be scanned or image-only.")
+        raise HTTPException(400, "No readable text found in this PDF. It may be a scanned image-only PDF.")
 
     chunks = chunk_text(raw_text)
     if not chunks:
         raise HTTPException(400, "Could not extract meaningful text chunks.")
 
-    # Embed and store in ChromaDB
-    embedder   = get_embedder()
-    collection = get_collection()
-
     doc_id = uuid.uuid4().hex
-    embeddings = embedder.encode(chunks).tolist()
+    index  = load_index()
 
-    ids       = [f"{doc_id}_{i}" for i in range(len(chunks))]
-    metadatas = [
-        {
+    index["documents"].append({
+        "id":            doc_id,
+        "subject":       subject,
+        "document_name": document_name,
+        "file_path":     str(save_path),
+        "uploaded_by":   current_user.name,
+        "chunk_count":   len(chunks),
+    })
+
+    for i, chunk in enumerate(chunks):
+        index["chunks"].append({
+            "id":            f"{doc_id}_{i}",
+            "doc_id":        doc_id,
             "subject":       subject,
             "document_name": document_name,
-            "chunk_index":   str(i),
-            "doc_id":        doc_id,
-            "file_path":     str(save_path),
-            "uploaded_by":   current_user.name,
-        }
-        for i in range(len(chunks))
-    ]
+            "text":          chunk,
+        })
 
-    collection.add(documents=chunks, embeddings=embeddings, metadatas=metadatas, ids=ids)
+    save_index(index)
 
     return {
         "message":       f"Uploaded and indexed '{document_name}' with {len(chunks)} chunks.",
@@ -202,22 +216,8 @@ async def upload_document(
 def list_documents(
     current_user: models.User = Depends(auth.RoleChecker(["Admin"])),
 ):
-    """Admin: list all indexed documents."""
-    collection = get_collection()
-    result = collection.get(include=["metadatas"])
-    seen = {}
-    for meta in (result.get("metadatas") or []):
-        doc_id = meta.get("doc_id", "unknown")
-        if doc_id not in seen:
-            seen[doc_id] = {
-                "id":            doc_id,
-                "subject":       meta.get("subject", ""),
-                "document_name": meta.get("document_name", ""),
-                "uploaded_by":   meta.get("uploaded_by", ""),
-                "chunk_count":   0,
-            }
-        seen[doc_id]["chunk_count"] += 1
-    return list(seen.values())
+    index = load_index()
+    return index.get("documents", [])
 
 
 @router.delete("/admin/documents/{doc_id}")
@@ -225,25 +225,27 @@ def delete_document(
     doc_id: str,
     current_user: models.User = Depends(auth.RoleChecker(["Admin"])),
 ):
-    """Admin: delete a document and all its chunks from ChromaDB."""
-    collection = get_collection()
-    result = collection.get(where={"doc_id": doc_id}, include=["metadatas"])
-    ids = result.get("ids", [])
-    if not ids:
+    index = load_index()
+    docs   = [d for d in index.get("documents", []) if d["id"] != doc_id]
+    chunks = [c for c in index.get("chunks",    []) if c["doc_id"] != doc_id]
+
+    if len(docs) == len(index.get("documents", [])):
         raise HTTPException(404, "Document not found.")
 
-    # Delete the PDF file if it exists
-    metas = result.get("metadatas") or []
-    if metas:
-        file_path = metas[0].get("file_path", "")
-        if file_path and Path(file_path).exists():
-            Path(file_path).unlink(missing_ok=True)
+    # Remove PDF file
+    deleted_doc = next((d for d in index.get("documents", []) if d["id"] == doc_id), None)
+    if deleted_doc:
+        fp = Path(deleted_doc.get("file_path", ""))
+        if fp.exists():
+            fp.unlink(missing_ok=True)
 
-    collection.delete(ids=ids)
-    return {"message": f"Deleted {len(ids)} chunks for document '{doc_id}'."}
+    index["documents"] = docs
+    index["chunks"]    = chunks
+    save_index(index)
+    return {"message": f"Deleted document '{doc_id}' and its chunks."}
 
 
-# ── Student question-answering endpoint ───────────────────────────────────
+# ── Student question-answering ─────────────────────────────────────────────
 
 @router.post("/ask")
 def ask_question(
@@ -252,143 +254,91 @@ def ask_question(
 ):
     """
     Student: ask a question.
-    1. Embed the question
-    2. Retrieve top-k relevant chunks from ChromaDB
-    3. Build a context-aware prompt
-    4. Send to Ollama for answer generation
-    5. Return answer + source info
+    1. Retrieve relevant chunks via TF-IDF keyword scoring
+    2. Build a grounded prompt with retrieved context
+    3. Send to Groq for answer generation
+    4. Return answer + source book names
     """
     if not request.question.strip():
         raise HTTPException(400, "Question cannot be empty.")
 
-    collection = get_collection()
-    embedder   = get_embedder()
+    index = load_index()
 
-    # Check if knowledge base has any documents
-    count = collection.count()
-    if count == 0:
+    if not index.get("chunks"):
         return {
-            "answer":  "The knowledge library is empty. Please ask your admin to upload study materials first.",
+            "answer":  "📚 The knowledge library is empty. Please ask your admin to upload study materials first.",
             "sources": [],
             "from_kb": False,
         }
 
-    # Retrieve relevant chunks
-    query_embedding = embedder.encode([request.question.strip()]).tolist()
-    where_filter = {"subject": request.subject} if request.subject else None
-
-    results = collection.query(
-        query_embeddings=query_embedding,
-        n_results=min(4, count),
-        where=where_filter if where_filter else None,
-        include=["documents", "metadatas", "distances"],
-    )
-
-    docs      = results.get("documents",  [[]])[0]
-    metas     = results.get("metadatas",  [[]])[0]
-    distances = results.get("distances",  [[]])[0]
-
-    # Filter by relevance threshold (cosine distance < 0.7 = meaningful match)
-    THRESHOLD = 0.7
-    relevant = [
-        (d, m, dist)
-        for d, m, dist in zip(docs, metas, distances)
-        if dist < THRESHOLD
-    ]
-
-    sources = []
-    for _, m, _ in relevant:
-        src = {
-            "document_name": m.get("document_name", "Unknown"),
-            "subject":       m.get("subject", ""),
-        }
-        if src not in sources:
-            sources.append(src)
+    relevant = retrieve_chunks(request.question.strip(), request.subject, index, top_k=4)
 
     if not relevant:
-        # Nothing found in KB — say so clearly, don't hallucinate
         return {
             "answer":  (
                 "I couldn't find relevant information about this in the uploaded study materials. "
-                "Please check if the correct subject materials have been uploaded by your admin, "
+                "Please check if the correct subject materials have been uploaded, "
                 "or try rephrasing your question."
             ),
             "sources": [],
             "from_kb": False,
         }
 
-    # Build prompt with retrieved context
-    context = "\n\n---\n\n".join([d for d, _, _ in relevant])
-    prompt = (
+    # Build sources list
+    seen_sources = []
+    for c in relevant:
+        src = {"document_name": c["document_name"], "subject": c["subject"]}
+        if src not in seen_sources:
+            seen_sources.append(src)
+
+    # Build grounded prompt
+    context = "\n\n---\n\n".join(c["text"] for c in relevant)
+    system_msg = (
         "You are a helpful educational assistant for TutorNow.\n"
         "Answer the student's question using ONLY the context provided below.\n"
-        "If the answer is not in the context, say 'I could not find this in the study materials.'\n"
-        "Be clear, concise and educational. Use simple language suitable for students.\n\n"
+        "If the answer is not in the context, say exactly: "
+        "'I could not find this in the uploaded study materials.'\n"
+        "Be clear, concise, and educational. Use simple language for students.\n"
+        "Do NOT make up information not present in the context."
+    )
+    user_msg = (
         f"CONTEXT FROM STUDY MATERIALS:\n{context}\n\n"
         f"STUDENT QUESTION: {request.question.strip()}\n\n"
         "ANSWER:"
     )
 
-    # Try Ollama — fall back to a context-based summary if not available
-    if is_ollama_running():
-        answer = query_ollama(prompt)
-    else:
-        # Graceful fallback: return top chunk as answer with setup message
-        top_chunk = relevant[0][0] if relevant else ""
-        answer = (
-            f"📚 From the study materials:\n\n{top_chunk[:600]}{'...' if len(top_chunk) > 600 else ''}\n\n"
-            "──────────────────────────\n"
-            "⚠️ For AI-generated answers, install and run Ollama:\n"
-            "1. Download from https://ollama.com\n"
-            f"2. Run: `ollama pull {OLLAMA_MODEL}`\n"
-            "3. Start: `ollama serve`\n"
-            "Once running, you'll get full AI-generated explanations."
-        )
+    answer = call_groq(system_msg, user_msg)
 
     return {
         "answer":  answer,
-        "sources": sources,
+        "sources": seen_sources,
         "from_kb": True,
     }
 
 
+# ── Status & subjects ─────────────────────────────────────────────────────
+
 @router.get("/status")
 def rag_status(current_user: models.User = Depends(auth.get_current_user)):
-    """Check RAG system status: ChromaDB, embedder, Ollama."""
-    status = {
-        "chromadb":       False,
-        "embedder":       False,
-        "ollama_running": False,
-        "ollama_model":   OLLAMA_MODEL,
-        "document_count": 0,
-        "ollama_url":     OLLAMA_BASE_URL,
+    index = load_index()
+    total_chunks = len(index.get("chunks", []))
+    total_docs   = len(index.get("documents", []))
+    return {
+        "chromadb":       True,   # not used — kept for UI compatibility
+        "embedder":       True,   # not used — kept for UI compatibility
+        "ollama_running": bool(GROQ_API_KEY),
+        "ollama_model":   GROQ_MODEL,
+        "document_count": total_chunks,
+        "total_documents": total_docs,
+        "ollama_url":     GROQ_API_URL,
+        "engine":         "Groq API + TF-IDF retrieval",
     }
-    try:
-        collection = get_collection()
-        status["chromadb"]       = True
-        status["document_count"] = collection.count()
-    except Exception as e:
-        status["chromadb_error"] = str(e)
-
-    try:
-        get_embedder()
-        status["embedder"] = True
-    except Exception as e:
-        status["embedder_error"] = str(e)
-
-    status["ollama_running"] = is_ollama_running()
-    return status
 
 
 @router.get("/subjects")
 def list_subjects(current_user: models.User = Depends(auth.get_current_user)):
-    """Return unique subjects available in the knowledge base."""
-    try:
-        collection = get_collection()
-        result = collection.get(include=["metadatas"])
-        subjects = sorted(set(
-            m.get("subject", "") for m in (result.get("metadatas") or []) if m.get("subject")
-        ))
-        return {"subjects": subjects}
-    except Exception:
-        return {"subjects": []}
+    index    = load_index()
+    subjects = sorted(set(
+        c["subject"] for c in index.get("chunks", []) if c.get("subject")
+    ))
+    return {"subjects": subjects}
