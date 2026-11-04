@@ -43,9 +43,27 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Only log warning for debugging without killing session on background polling
     if (error.response?.status === 401) {
       console.warn("[API Notice] 401 Unauthorized for request:", error.config?.url);
+      // If token is expired/invalid, clear session and redirect to login
+      if (typeof window !== "undefined") {
+        const token = localStorage.getItem("token");
+        if (token) {
+          // Only redirect for admin/protected routes, not during login itself
+          const url = error.config?.url || "";
+          const isAuthCall = url.includes("/api/auth/login") || url.includes("/api/auth/register");
+          if (!isAuthCall) {
+            localStorage.removeItem("token");
+            localStorage.removeItem("role");
+            localStorage.removeItem("name");
+            localStorage.removeItem("email");
+            localStorage.removeItem("userId");
+            localStorage.removeItem("supabaseUid");
+            localStorage.removeItem("tutorStatus");
+            window.location.href = "/login?msg=session_expired";
+          }
+        }
+      }
     }
     return Promise.reject(error);
   }

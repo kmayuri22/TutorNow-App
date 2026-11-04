@@ -7,15 +7,16 @@ import Link from "next/link";
 import api from "@/services/api";
 import {
   User, LayoutDashboard, Calendar, CreditCard,
-  Settings, LogOut, Loader2, BookOpen, BrainCircuit
+  Settings, LogOut, Loader2, BookOpen, BrainCircuit, Library
 } from "lucide-react";
 
 // Bottom nav items for mobile
 const MOBILE_NAV = [
-  { href: "/student/dashboard",    label: "Dashboard",  icon: LayoutDashboard, color: "text-primary-500"  },
-  { href: "/student/tutors",       label: "Find Tutors", icon: BookOpen,        color: "text-indigo-500"  },
-  { href: "/student/ai-assistant", label: "AI Tutor",    icon: BrainCircuit,    color: "text-purple-500"  },
-  { href: "/student/profile",      label: "Profile",     icon: User,            color: "text-slate-400"   },
+  { href: "/student/dashboard",      label: "Dashboard",  icon: LayoutDashboard, color: "text-primary-500"  },
+  { href: "/student/tutors",         label: "Find Tutors", icon: BookOpen,        color: "text-indigo-500"  },
+  { href: "/student/ai-assistant",   label: "AI Tutor",    icon: BrainCircuit,    color: "text-purple-500"  },
+  { href: "/student/rag-assistant",  label: "Study KB",    icon: Library,         color: "text-teal-500"    },
+  { href: "/student/profile",        label: "Profile",     icon: User,            color: "text-slate-400"   },
 ];
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
@@ -77,6 +78,10 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
           <Link href="/student/ai-assistant" className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-semibold transition">
             <BrainCircuit className="h-4 w-4 text-purple-500" />
             AI Learning Assistant
+          </Link>
+          <Link href="/student/rag-assistant" className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-semibold transition">
+            <Library className="h-4 w-4 text-teal-500" />
+            Study Knowledge Base
           </Link>
           <Link href="/student/profile" className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-semibold transition">
             <User className="h-4 w-4 text-slate-400" />
