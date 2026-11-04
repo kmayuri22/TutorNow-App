@@ -12,6 +12,7 @@ import {
 import { useRouter } from "next/navigation";
 
 import { getSessionStatusLabel } from "@/lib/dateTime";
+import AIMascot from "@/components/AIMascot";
 
 interface User {
   name: string;
@@ -248,12 +249,23 @@ export default function StudentDashboard() {
           <h1 className="text-2xl font-extrabold">Welcome Back, {userName}!</h1>
           <p className="text-xs text-slate-450 mt-1">Manage your active tutoring sessions, Indian payment receipts, and tutor bookings.</p>
         </div>
-        <button
-          onClick={() => router.push("/student/tutors")}
-          className="px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs rounded-xl shadow transition"
-        >
-          + Book New Tutor
-        </button>
+        <div className="flex items-center gap-4 shrink-0">
+          {/* AI Mascot — click for tips or to open AI Assistant */}
+          <div className="hidden sm:block">
+            <AIMascot studentName={userName} totalSessions={stats.totalLessons} />
+          </div>
+          <button
+            onClick={() => router.push("/student/tutors")}
+            className="px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs rounded-xl shadow transition"
+          >
+            + Book New Tutor
+          </button>
+        </div>
+      </div>
+
+      {/* Mobile mascot row — shown only on small screens */}
+      <div className="flex justify-center sm:hidden">
+        <AIMascot studentName={userName} totalSessions={stats.totalLessons} />
       </div>
 
       {/* Stats Cards in ₹ */}
