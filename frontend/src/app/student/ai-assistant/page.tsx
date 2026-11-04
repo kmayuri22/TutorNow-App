@@ -1,20 +1,39 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import api from "@/services/api";
 import { useStore } from "@/store/useStore";
 import {
   BrainCircuit, Send, Loader2, AlertCircle, ChevronDown,
-  MessageSquare, Trash2, Plus, BookOpen, Clock, X
+  MessageSquare, Trash2, Plus, BookOpen, Clock, X,
+  Star, MapPin, User, ExternalLink
 } from "lucide-react";
 
-// ── Types ────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────
 
 interface ChatMessage {
   id?: number;
   role: "user" | "assistant";
   content: string;
   created_at?: string;
+  tutors?: TutorCard[]; // attached tutor recommendations
+}
+
+interface TutorCard {
+  id: number;
+  name: string;
+  subject: string;
+  qualification: string;
+  specialization?: string;
+  experience: number;
+  hourly_rate: number;
+  rating: number;
+  languages?: string;
+  teaching_mode?: string;
+  location_city?: string;
+  is_online: boolean;
+  profile_image?: string;
 }
 
 interface SessionSummary {
@@ -25,25 +44,102 @@ interface SessionSummary {
   message_count: number;
 }
 
-// ── Constants ────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────
 
 const SUBJECTS = [
-  "General",
-  "Mathematics",
-  "Physics",
-  "Chemistry",
-  "Biology",
-  "Computer Science",
-  "English",
-  "History",
-  "Geography",
-  "Economics",
+  "General", "Mathematics", "Physics", "Chemistry", "Biology",
+  "Computer Science", "English", "History", "Geography", "Economics",
 ];
 
-// ── Component ────────────────────────────────
+// Keywords that indicate the student is looking for a tutor
+const TUTOR_REQUEST_KEYWORDS = [
+  "find tutor", "find a tutor", "suggest tutor", "suggest a tutor",
+  "recommend tutor", "recommend a tutor", "best tutor", "good tutor",
+  "need a tutor", "need tutor", "looking for tutor", "looking for a tutor",
+  "tutor for", "who teaches", "available tutor", "can you suggest",
+  "can you recommend", "help me find", "get a tutor", "want a tutor",
+];
+
+function isTutorRequest(message: string): boolean {
+  const lower = message.toLowerCase();
+  return TUTOR_REQUEST_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+// ── Tutor Card Component ──────────────────────────────────────────────────
+
+function TutorRecommendationCard({ tutor, onBook }: { tutor: TutorCard; onBook: (id: number) => void }) {
+  return (
+    <div className="flex flex-col sm:flex-row gap-3 p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow">
+      {/* Avatar */}
+      <div className="shrink-0">
+        {tutor.profile_image ? (
+          <img
+            src={tutor.profile_image}
+            alt={tutor.name}
+            className="h-14 w-14 rounded-xl object-cover border border-slate-200 dark:border-slate-700"
+          />
+        ) : (
+          <div className="h-14 w-14 rounded-xl bg-purple-100 dark:bg-purple-950/40 flex items-center justify-center">
+            <User className="h-6 w-6 text-purple-500" />
+          </div>
+        )}
+      </div>
+
+      {/* Info */}
+      <div className="flex-1 min-w-0 space-y-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-bold text-sm text-slate-800 dark:text-white">{tutor.name}</span>
+          {tutor.is_online && (
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400">
+              🟢 Online
+            </span>
+          )}
+        </div>
+
+        <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{tutor.subject}</p>
+        <p className="text-xs text-slate-400 dark:text-slate-500 truncate">{tutor.qualification}</p>
+
+        <div className="flex items-center gap-3 flex-wrap pt-0.5">
+          {/* Rating */}
+          <span className="flex items-center gap-1 text-xs font-semibold text-amber-500">
+            <Star className="h-3 w-3 fill-amber-500" />
+            {tutor.rating.toFixed(1)}
+          </span>
+          {/* Experience */}
+          <span className="text-xs text-slate-500">{tutor.experience} yr{tutor.experience !== 1 ? "s" : ""} exp</span>
+          {/* Rate */}
+          <span className="text-xs font-bold text-purple-600 dark:text-purple-400">
+            ₹{tutor.hourly_rate.toFixed(0)}/hr
+          </span>
+          {/* City */}
+          {tutor.location_city && (
+            <span className="flex items-center gap-0.5 text-xs text-slate-400">
+              <MapPin className="h-3 w-3" />
+              {tutor.location_city}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Book button */}
+      <div className="shrink-0 flex items-center">
+        <button
+          onClick={() => onBook(tutor.id)}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition shadow-sm"
+        >
+          Book
+          <ExternalLink className="h-3 w-3" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────────────────
 
 export default function AILearningAssistant() {
   const { name } = useStore();
+  const router = useRouter();
 
   // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -68,9 +164,7 @@ export default function AILearningAssistant() {
 
   // Load conversation history list when panel opens
   useEffect(() => {
-    if (showHistory) {
-      fetchHistory();
-    }
+    if (showHistory) fetchHistory();
   }, [showHistory]);
 
   const fetchHistory = async () => {
@@ -93,11 +187,10 @@ export default function AILearningAssistant() {
       setMessages(res.data);
       setSessionId(sid);
       setShowHistory(false);
-      // Set subject from first message
       if (res.data.length > 0 && res.data[0].subject) {
         setSubject(res.data[0].subject);
       }
-    } catch (err) {
+    } catch {
       setError("Failed to load conversation.");
     } finally {
       setLoading(false);
@@ -109,12 +202,9 @@ export default function AILearningAssistant() {
     try {
       await api.delete(`/api/ai/history/${sid}`);
       setSessions((prev) => prev.filter((s) => s.session_id !== sid));
-      // If currently viewing this session, clear it
-      if (sessionId === sid) {
-        startNewChat();
-      }
-    } catch (err) {
-      console.error("Failed to delete conversation:", err);
+      if (sessionId === sid) startNewChat();
+    } catch {
+      console.error("Failed to delete conversation.");
     }
   };
 
@@ -137,32 +227,48 @@ export default function AILearningAssistant() {
     const userMessage: ChatMessage = { role: "user", content: trimmed };
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
-
     setLoading(true);
+
+    // Check if this is a tutor request so we can also fetch tutor cards
+    const needsTutors = isTutorRequest(trimmed);
+
     try {
-      const res = await api.post("/api/ai/chat", {
-        message: trimmed,
-        subject,
-        session_id: sessionId,
-      });
+      // Call AI chat + optionally fetch tutor recommendations in parallel
+      const requests: Promise<any>[] = [
+        api.post("/api/ai/chat", {
+          message: trimmed,
+          subject,
+          session_id: sessionId,
+        }),
+      ];
 
-      const { reply, session_id: newSessionId } = res.data;
-
-      // Update session ID if this was a new conversation
-      if (!sessionId) {
-        setSessionId(newSessionId);
+      if (needsTutors) {
+        requests.push(
+          api.get("/api/ai/suggest-tutors", {
+            params: { subject: subject !== "General" ? subject : undefined, limit: 3 },
+          }).catch(() => null) // don't break chat if tutor fetch fails
+        );
       }
 
-      // Add AI response
-      setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+      const [chatRes, tutorRes] = await Promise.all(requests);
+      const { reply, session_id: newSessionId } = chatRes.data;
+
+      if (!sessionId) setSessionId(newSessionId);
+
+      // Attach tutor cards to the assistant message if any were returned
+      const tutors: TutorCard[] = tutorRes?.data?.tutors ?? [];
+
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: reply, tutors: tutors.length > 0 ? tutors : undefined },
+      ]);
     } catch (err: any) {
       const detail =
         err?.response?.data?.detail ||
         "Failed to get a response. Please check your internet connection and try again.";
       setError(detail);
-      // Remove the optimistically added user message on failure
       setMessages((prev) => prev.slice(0, -1));
-      setInput(trimmed); // Restore input so user can retry
+      setInput(trimmed);
     } finally {
       setLoading(false);
     }
@@ -175,7 +281,11 @@ export default function AILearningAssistant() {
     }
   };
 
-  // ── Render ────────────────────────────────
+  const handleBookTutor = (tutorId: number) => {
+    router.push(`/student/find-tutors?tutor=${tutorId}`);
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6 text-left">
@@ -189,11 +299,10 @@ export default function AILearningAssistant() {
               <h1 className="text-2xl font-extrabold">AI Learning Assistant</h1>
             </div>
             <p className="text-sm text-purple-100">
-              Ask any academic question and get clear, step-by-step explanations.
+              Ask any academic question — or ask me to find the best tutor for you!
             </p>
           </div>
 
-          {/* Action buttons */}
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => setShowHistory(!showHistory)}
@@ -278,10 +387,10 @@ export default function AILearningAssistant() {
       )}
 
       {/* Chat Window */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm flex flex-col overflow-hidden"
+      <div
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm flex flex-col overflow-hidden"
         style={{ minHeight: "520px" }}
       >
-
         {/* Subject Selector Bar */}
         <div className="flex items-center gap-3 px-5 py-3 border-b dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50">
           <BookOpen className="h-4 w-4 text-slate-400 shrink-0" />
@@ -299,16 +408,14 @@ export default function AILearningAssistant() {
             <ChevronDown className="absolute right-2 top-2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
           </div>
           {sessionId && (
-            <span className="ml-auto text-[10px] text-slate-400 font-medium">
-              Session active
-            </span>
+            <span className="ml-auto text-[10px] text-slate-400 font-medium">Session active</span>
           )}
         </div>
 
         {/* Messages Area */}
         <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
 
-          {/* Welcome message when no chat yet */}
+          {/* Welcome screen */}
           {messages.length === 0 && !loading && (
             <div className="flex-1 flex flex-col items-center justify-center gap-4 py-12 text-center">
               <div className="p-4 rounded-2xl bg-purple-50 dark:bg-purple-950/30">
@@ -319,15 +426,15 @@ export default function AILearningAssistant() {
                   Hi {name}, I&apos;m your AI Learning Assistant!
                 </h3>
                 <p className="text-sm text-slate-400 max-w-sm">
-                  Ask me any academic question — I&apos;ll provide clear, step-by-step explanations with examples.
+                  Ask me any academic question, or ask me to find the best tutor for your subject.
                 </p>
               </div>
               <div className="flex flex-wrap justify-center gap-2 mt-2">
                 {[
                   "Explain Newton's laws of motion",
                   "How do I solve quadratic equations?",
-                  "What is photosynthesis?",
-                  "Explain recursion in programming",
+                  "Suggest a tutor for Mathematics",
+                  "Find me a good Physics tutor",
                 ].map((suggestion) => (
                   <button
                     key={suggestion}
@@ -343,10 +450,7 @@ export default function AILearningAssistant() {
 
           {/* Chat messages */}
           {messages.map((msg, idx) => (
-            <div
-              key={idx}
-              className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}
-            >
+            <div key={idx} className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
               {/* Avatar */}
               <div
                 className={`h-8 w-8 rounded-xl flex items-center justify-center shrink-0 text-xs font-bold ${
@@ -355,18 +459,38 @@ export default function AILearningAssistant() {
                     : "bg-purple-100 dark:bg-purple-950/50 text-purple-600 dark:text-purple-300"
                 }`}
               >
-                {msg.role === "user" ? (name?.[0]?.toUpperCase() || "S") : <BrainCircuit className="h-4 w-4" />}
+                {msg.role === "user"
+                  ? (name?.[0]?.toUpperCase() || "S")
+                  : <BrainCircuit className="h-4 w-4" />}
               </div>
 
-              {/* Bubble */}
-              <div
-                className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-                  msg.role === "user"
-                    ? "bg-primary-600 text-white rounded-tr-sm"
-                    : "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-tl-sm"
-                }`}
-              >
-                {msg.content}
+              {/* Bubble + tutor cards */}
+              <div className={`flex flex-col gap-3 max-w-[85%] ${msg.role === "user" ? "items-end" : "items-start"}`}>
+                <div
+                  className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+                    msg.role === "user"
+                      ? "bg-primary-600 text-white rounded-tr-sm"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-tl-sm"
+                  }`}
+                >
+                  {msg.content}
+                </div>
+
+                {/* Tutor recommendation cards */}
+                {msg.role === "assistant" && msg.tutors && msg.tutors.length > 0 && (
+                  <div className="w-full space-y-2">
+                    <p className="text-[11px] font-bold text-purple-600 dark:text-purple-400 px-1">
+                      🎓 Top Tutors on TutorNow
+                    </p>
+                    {msg.tutors.map((tutor) => (
+                      <TutorRecommendationCard
+                        key={tutor.id}
+                        tutor={tutor}
+                        onBook={handleBookTutor}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -384,7 +508,7 @@ export default function AILearningAssistant() {
             </div>
           )}
 
-          {/* Error message */}
+          {/* Error */}
           {error && (
             <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-xs text-red-600 dark:text-red-400">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -403,7 +527,7 @@ export default function AILearningAssistant() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={`Ask a ${subject === "General" ? "" : subject + " "}question... (Enter to send, Shift+Enter for new line)`}
+              placeholder={`Ask a ${subject === "General" ? "" : subject + " "}question or say "Find me a tutor for ${subject}"...`}
               rows={2}
               className="flex-1 resize-none px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 dark:text-white placeholder:text-slate-400 transition"
             />
@@ -413,11 +537,7 @@ export default function AILearningAssistant() {
               className="p-3 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 text-white transition shadow-sm shrink-0"
               title="Send message"
             >
-              {loading ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <Send className="h-5 w-5" />
-              )}
+              {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
             </button>
           </div>
           <p className="text-[10px] text-slate-400 mt-2 text-center">
