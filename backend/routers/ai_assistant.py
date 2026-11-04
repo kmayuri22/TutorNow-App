@@ -1,8 +1,9 @@
 """
 AI Learning Assistant Router
 Provides AI-powered academic question answering for students.
-Uses Google Gemini API (free tier) via direct REST calls.
-API key is read from the GEMINI_API_KEY environment variable.
+Uses Groq API (free tier) via OpenAI-compatible REST calls.
+API key is read from the GROQ_API_KEY environment variable.
+Get a free key at: https://console.groq.com/keys
 """
 
 import os
@@ -24,18 +25,16 @@ import auth
 
 router = APIRouter(prefix="/api/ai", tags=["AI Learning Assistant"])
 
-# Gemini API configuration - using current model (Nov 2026)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_API_URL = (
-    "https://generativelanguage.googleapis.com/v1/models/"
-    "gemini-3.8-flash:generateContent"
-)
+# Groq API configuration - OpenAI-compatible endpoint
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "llama-3.3-70b-versatile"
 
 # Debug: Log if API key is configured (don't log the actual key!)
-if GEMINI_API_KEY:
-    print(f"✓ Gemini API key is configured (length: {len(GEMINI_API_KEY)})")
+if GROQ_API_KEY:
+    print(f"✓ Groq API key is configured (length: {len(GROQ_API_KEY)})")
 else:
-    print("✗ WARNING: GEMINI_API_KEY environment variable is not set!")
+    print("✗ WARNING: GROQ_API_KEY environment variable is not set!")
 
 SYSTEM_PROMPT = (
     "You are an AI Learning Assistant for TutorNow, an educational platform. "
@@ -56,62 +55,51 @@ SUPPORTED_SUBJECTS = [
 ]
 
 
-def _call_gemini(messages: list, subject: str) -> str:
+def _call_groq(messages: list, subject: str) -> str:
     """
-    Calls the Google Gemini API with the conversation history.
+    Calls the Groq API (OpenAI-compatible) with the conversation history.
     Returns the AI response text.
     Raises HTTPException on failure.
     """
-    if not GEMINI_API_KEY:
+    if not GROQ_API_KEY:
         raise HTTPException(
             status_code=503,
-            detail="AI service is not configured. Please contact the administrator to set up the GEMINI_API_KEY."
+            detail="AI service is not configured. Please contact the administrator to set up the GROQ_API_KEY."
         )
 
-    # Build the conversation parts for Gemini
-    # Gemini expects alternating user/model roles
-    # We prepend the system prompt as the first user message
-    contents = []
+    # Build messages in OpenAI format
+    # System message sets the assistant's behaviour
+    chat_messages = [
+        {
+            "role": "system",
+            "content": f"{SYSTEM_PROMPT}\n\nSubject context: {subject}"
+        }
+    ]
 
-    # Add system context as the first turn
-    contents.append({
-        "role": "user",
-        "parts": [{"text": f"{SYSTEM_PROMPT}\n\nSubject context: {subject}"}]
-    })
-    contents.append({
-        "role": "model",
-        "parts": [{"text": "Understood. I am ready to help students with their academic questions. Please ask your question."}]
-    })
-
-    # Add the conversation history
+    # Append conversation history and current user message
     for msg in messages:
-        gemini_role = "user" if msg["role"] == "user" else "model"
-        contents.append({
-            "role": gemini_role,
-            "parts": [{"text": msg["content"]}]
+        chat_messages.append({
+            "role": msg["role"],          # "user" or "assistant"
+            "content": msg["content"]
         })
 
     payload = {
-        "contents": contents,
-        "generationConfig": {
-            "temperature": 0.7,
-            "maxOutputTokens": 1024,
-            "topP": 0.9,
-        },
-        "safetySettings": [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-        ]
+        "model": GROQ_MODEL,
+        "messages": chat_messages,
+        "temperature": 0.7,
+        "max_tokens": 1024,
+        "top_p": 0.9,
     }
 
     try:
         with httpx.Client(timeout=30.0) as client:
             response = client.post(
-                f"{GEMINI_API_URL}?key={GEMINI_API_KEY}",
+                GROQ_API_URL,
                 json=payload,
-                headers={"Content-Type": "application/json"}
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                }
             )
 
         if response.status_code != 200:
@@ -122,16 +110,11 @@ def _call_gemini(messages: list, subject: str) -> str:
             )
 
         data = response.json()
-        candidates = data.get("candidates", [])
-        if not candidates:
+        choices = data.get("choices", [])
+        if not choices:
             raise HTTPException(status_code=502, detail="AI returned no response. Please try again.")
 
-        # Extract text from the first candidate
-        parts = candidates[0].get("content", {}).get("parts", [])
-        if not parts:
-            raise HTTPException(status_code=502, detail="AI response was empty. Please try again.")
-
-        return parts[0].get("text", "").strip()
+        return choices[0].get("message", {}).get("content", "").strip()
 
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="AI service timed out. Please try again.")
@@ -145,9 +128,11 @@ def _call_gemini(messages: list, subject: str) -> str:
 def ai_status():
     """Diagnostic endpoint to check AI service configuration."""
     return {
-        "api_key_configured": bool(GEMINI_API_KEY),
-        "api_key_length": len(GEMINI_API_KEY) if GEMINI_API_KEY else 0,
-        "api_url": GEMINI_API_URL
+        "provider": "Groq",
+        "model": GROQ_MODEL,
+        "api_key_configured": bool(GROQ_API_KEY),
+        "api_key_length": len(GROQ_API_KEY) if GROQ_API_KEY else 0,
+        "api_url": GROQ_API_URL,
     }
 
 
@@ -192,7 +177,7 @@ def chat_with_ai(
     messages.append({"role": "user", "content": request.message.strip()})
 
     # Call AI
-    ai_reply = _call_gemini(messages, subject)
+    ai_reply = _call_groq(messages, subject)
 
     # Save student message to DB
     user_msg = models.AIChatMessage(
@@ -227,7 +212,6 @@ def get_chat_sessions(
     Returns a list of the student's past AI conversation sessions.
     Each entry is the first message of a session (for display in history list).
     """
-    # Get distinct session IDs for this user, ordered by most recent
     sessions_raw = (
         db.query(
             models.AIChatMessage.session_id,
