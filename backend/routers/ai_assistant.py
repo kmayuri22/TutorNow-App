@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/ai", tags=["AI Learning Assistant"])
 # Groq API configuration - OpenAI-compatible endpoint
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL = "llama3-8b-8192"
+GROQ_MODEL = "openai/gpt-oss-20b"
 
 # Debug: Log if API key is configured (don't log the actual key!)
 if GROQ_API_KEY:
